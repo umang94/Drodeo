@@ -11,5 +11,18 @@
       "download_count": 0,
       "note": "Preview version (full download requires OAuth)"
     }
+  ],
+  "exciting": [
+    {
+      "title": "Trailer.wav",
+      "path": "music/exciting_freesound_335694_Trailerwav.mp3",
+      "duration": 42.1217,
+      "source": "freesound",
+      "track_id": 335694,
+      "license": "http://creativecommons.org/licenses/by-nc/3.0/",
+      "username": "Creeper_Ciller78",
+      "download_count": 0,
+      "note": "Preview version (full download requires OAuth)"
+    }
   ]
 }
