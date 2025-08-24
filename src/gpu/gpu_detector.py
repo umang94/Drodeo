@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 class GPUCapabilities:
     """Container for GPU capability information."""
     has_cuda: bool = False
+    has_mps: bool = False  # Apple Silicon Metal Performance Shaders
     has_cupy: bool = False
     has_opencv_cuda: bool = False
     cuda_version: Optional[str] = None
@@ -27,16 +28,22 @@ class GPUCapabilities:
     gpu_memory_mb: int = 0
     gpu_name: str = ""
     compute_capability: Optional[str] = None
+    gpu_type: str = "unknown"  # "cuda", "mps", "cpu"
     
     @property
     def is_gpu_ready(self) -> bool:
         """Check if GPU is ready for acceleration."""
-        return self.has_cuda and self.has_cupy and self.gpu_count > 0
+        return (self.has_cuda or self.has_mps) and self.gpu_count > 0
     
     @property
     def can_accelerate_opencv(self) -> bool:
         """Check if OpenCV CUDA acceleration is available."""
-        return self.has_opencv_cuda and self.is_gpu_ready
+        return self.has_opencv_cuda and self.has_cuda
+    
+    @property
+    def can_accelerate_torch(self) -> bool:
+        """Check if PyTorch GPU acceleration is available."""
+        return self.has_cuda or self.has_mps
 
 class GPUDetector:
     """Detects and manages GPU capabilities."""
@@ -52,17 +59,20 @@ class GPUDetector:
             
         capabilities = GPUCapabilities()
         
-        # Check CUDA availability
+        # Check for different GPU types
+        capabilities.has_mps = self._check_mps()
         capabilities.has_cuda = self._check_cuda()
         
-        # Check CuPy availability
+        # Check CuPy availability (CUDA only)
         capabilities.has_cupy = self._check_cupy()
         
         # Check OpenCV CUDA support
         capabilities.has_opencv_cuda = self._check_opencv_cuda()
         
-        # Get detailed GPU information if CUDA is available
-        if capabilities.has_cuda:
+        # Get detailed GPU information
+        if capabilities.has_mps:
+            self._get_mps_details(capabilities)
+        elif capabilities.has_cuda:
             self._get_cuda_details(capabilities)
         
         self._capabilities = capabilities
@@ -73,11 +83,22 @@ class GPUDetector:
         
         return capabilities
     
-    def _check_cuda(self) -> bool:
-        """Check if CUDA is available."""
+    def _check_mps(self) -> bool:
+        """Check if Apple Silicon MPS is available."""
         try:
             import torch
-            return torch.cuda.is_available()
+            return torch.backends.mps.is_available()
+        except ImportError:
+            return False
+        except Exception:
+            return False
+    
+    def _check_cuda(self) -> bool:
+        """Check if NVIDIA CUDA is available."""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return True
         except ImportError:
             pass
         
@@ -128,8 +149,59 @@ class GPUDetector:
         except Exception:
             return False
     
+    def _get_mps_details(self, capabilities: GPUCapabilities):
+        """Get detailed Apple Silicon MPS information."""
+        try:
+            import torch
+            import platform
+            import subprocess
+            
+            capabilities.gpu_type = "mps"
+            capabilities.gpu_count = 1  # Apple Silicon has integrated GPU
+            
+            # Get system information
+            system_info = platform.uname()
+            if "arm64" in system_info.machine.lower():
+                # Try to get more specific chip information
+                try:
+                    result = subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'], 
+                                          capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        capabilities.gpu_name = f"Apple {result.stdout.strip()} GPU"
+                    else:
+                        capabilities.gpu_name = "Apple Silicon GPU"
+                except:
+                    capabilities.gpu_name = "Apple Silicon GPU"
+            else:
+                capabilities.gpu_name = "Apple Silicon GPU"
+            
+            # Estimate GPU memory (Apple Silicon uses unified memory)
+            try:
+                result = subprocess.run(['sysctl', '-n', 'hw.memsize'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    total_memory_bytes = int(result.stdout.strip())
+                    # Estimate GPU gets about 60% of system memory on Apple Silicon
+                    capabilities.gpu_memory_mb = int((total_memory_bytes * 0.6) // (1024 * 1024))
+                else:
+                    capabilities.gpu_memory_mb = 8192  # Default estimate
+            except:
+                capabilities.gpu_memory_mb = 8192  # Default estimate
+            
+            capabilities.compute_capability = "MPS"
+            capabilities.cuda_version = "N/A (MPS)"
+            
+        except Exception as e:
+            logger.debug(f"Failed to get MPS details: {e}")
+            capabilities.gpu_name = "Apple Silicon GPU"
+            capabilities.gpu_memory_mb = 8192
+            capabilities.gpu_count = 1
+            capabilities.gpu_type = "mps"
+    
     def _get_cuda_details(self, capabilities: GPUCapabilities):
         """Get detailed CUDA information."""
+        capabilities.gpu_type = "cuda"
+        
         # Try with PyTorch first
         try:
             import torch
@@ -222,7 +294,10 @@ class GPUDetector:
     
     def get_processing_device(self) -> str:
         """Get the recommended processing device string."""
-        if self.is_gpu_available():
+        capabilities = self.get_capabilities()
+        if capabilities.has_mps:
+            return "mps"
+        elif capabilities.has_cuda:
             return "cuda:0"
         return "cpu"
 
@@ -243,14 +318,16 @@ def print_gpu_info():
     
     print("🔍 GPU Detection Results:")
     print(f"   CUDA Available: {'✅' if capabilities.has_cuda else '❌'}")
+    print(f"   MPS Available: {'✅' if capabilities.has_mps else '❌'}")
     print(f"   CuPy Available: {'✅' if capabilities.has_cupy else '❌'}")
     print(f"   OpenCV CUDA: {'✅' if capabilities.has_opencv_cuda else '❌'}")
     
     if capabilities.is_gpu_ready:
+        print(f"   GPU Type: {capabilities.gpu_type.upper()}")
         print(f"   GPU Count: {capabilities.gpu_count}")
         print(f"   GPU Name: {capabilities.gpu_name}")
         print(f"   GPU Memory: {capabilities.gpu_memory_mb}MB")
-        print(f"   CUDA Version: {capabilities.cuda_version}")
+        print(f"   Version: {capabilities.cuda_version}")
         print(f"   Compute Capability: {capabilities.compute_capability}")
         print(f"   Recommended Batch Size: {detector.get_recommended_batch_size()}")
         print(f"   Processing Device: {detector.get_processing_device()}")
