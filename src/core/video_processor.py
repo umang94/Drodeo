@@ -1,6 +1,7 @@
 """
 Video Processing Core
 Handles video analysis, keyframe extraction, and clip detection for drone videos.
+Enhanced with GPU acceleration capabilities.
 """
 
 import cv2
@@ -10,6 +11,14 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 from tqdm import tqdm
+
+# Import GPU acceleration modules
+try:
+    from src.gpu.gpu_detector import get_gpu_detector
+    from src.gpu.gpu_video_processor import create_gpu_processor
+    GPU_AVAILABLE = True
+except ImportError:
+    GPU_AVAILABLE = False
 
 @dataclass
 class VideoClip:
@@ -23,13 +32,32 @@ class VideoClip:
     description: str = ""
 
 class VideoProcessor:
-    """Main video processing coordinator."""
+    """Main video processing coordinator with GPU acceleration support."""
     
-    def __init__(self):
+    def __init__(self, use_gpu: bool = True):
         self.frame_sample_rate = 30  # analyze every 30th frame for speed
         self.min_clip_duration = 2.0  # minimum 2 seconds
         self.max_clip_duration = 15.0  # maximum 15 seconds
         self.keyframes_per_video = 8  # number of keyframes to extract for AI analysis
+        
+        # Initialize GPU processor if available
+        self.use_gpu = use_gpu and GPU_AVAILABLE
+        self.gpu_processor = None
+        
+        if self.use_gpu:
+            try:
+                self.gpu_processor = create_gpu_processor()
+                if self.gpu_processor.use_gpu:
+                    print(f"   🚀 GPU acceleration enabled")
+                else:
+                    print(f"   💻 GPU not available, using CPU processing")
+                    self.use_gpu = False
+            except Exception as e:
+                print(f"   ⚠️  GPU initialization failed: {e}, using CPU processing")
+                self.use_gpu = False
+                self.gpu_processor = None
+        else:
+            print(f"   💻 Using CPU processing")
     
     def get_video_info(self, video_path: str) -> Dict:
         """Extract basic video information."""
@@ -56,10 +84,36 @@ class VideoProcessor:
         }
     
     def extract_keyframes(self, video_path: str, num_frames: int = None) -> List[np.ndarray]:
-        """Extract evenly distributed keyframes from video for AI analysis."""
+        """Extract evenly distributed keyframes from video for AI analysis with GPU acceleration."""
         if num_frames is None:
             num_frames = self.keyframes_per_video
-            
+        
+        # Use GPU acceleration if available
+        if self.use_gpu and self.gpu_processor:
+            try:
+                cap = cv2.VideoCapture(video_path)
+                if not cap.isOpened():
+                    raise ValueError(f"Could not open video: {video_path}")
+                
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                cap.release()
+                
+                # Calculate frame indices to extract
+                if frame_count <= num_frames:
+                    frame_indices = list(range(frame_count))
+                else:
+                    frame_indices = np.linspace(0, frame_count - 1, num_frames, dtype=int).tolist()
+                
+                # Use GPU-accelerated batch extraction
+                keyframes = self.gpu_processor.extract_frames_batch(
+                    video_path, frame_indices, target_size=(640, 360)
+                )
+                return keyframes
+                
+            except Exception as e:
+                print(f"   ⚠️  GPU keyframe extraction failed: {e}, falling back to CPU")
+        
+        # CPU fallback
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise ValueError(f"Could not open video: {video_path}")
