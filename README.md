@@ -26,12 +26,14 @@ The Drone Video Generator MVP is an intelligent video processing system that aut
 - **Multiple Formats**: Supports MP4, MOV, AVI, and MKV files
 
 ### 🎵 **Music & Audio**
-- **Royalty-Free Music**: Downloads from Freesound.org with Creative Commons licensing
+- **Freesound Integration**: Downloads high-quality music previews from Freesound.org
+- **Creative Commons Licensed**: All music uses proper CC licensing
 - **Theme Matching**: Selects music that fits each video theme perfectly
 - **Audio Mixing**: Balances original drone audio with background music
 - **Volume Optimization**: Ensures clear, audible output
 - **Smart Caching**: Avoids re-downloading music with intelligent storage
-- **Fallback System**: Creates sample music when API is unavailable
+- **Fallback System**: Uses sample music when API is unavailable
+- **Preview Quality**: Uses high-quality MP3 previews (no OAuth required)
 
 ### 🛠️ **System Features**
 - **Progress Tracking**: Real-time progress updates with detailed logging
@@ -87,42 +89,50 @@ The Drone Video Generator MVP is an intelligent video processing system that aut
 
 ### Basic Usage
 
-1. **Place your drone videos in the `uploads/` directory**
+1. **Place your drone videos in the `input/` directory**
 
 2. **Run the generator:**
    ```bash
-   python main.py uploads/your_video.mp4
+   python main.py input/your_video.mp4
    ```
 
 3. **Find your themed videos in the `output/` directory!**
+
+**Note**: The system now defaults to generating only the "happy" theme for faster processing. You can specify multiple themes using the `--themes` option.
 
 ## 📖 Usage Examples
 
 ### Basic Processing
 ```bash
-# Process a single video
-python main.py uploads/DJI_0131.mp4
+# Process a single video (defaults to happy theme)
+python main.py input/DJI_0131.mp4
 
 # Process multiple videos
-python main.py uploads/DJI_0131.mp4 uploads/DJI_0141.mp4
+python main.py input/DJI_0131.mp4 input/DJI_0141.mp4
 
-# Process all videos in uploads directory
-python main.py uploads/*.mp4
+# Process all videos in input directory
+python main.py input/*.mp4
 ```
 
 ### Advanced Options
 ```bash
-# Create 60-second videos for specific themes
-python main.py uploads/*.mp4 --duration 60 --themes peaceful exciting
+# Create videos for specific themes
+python main.py input/*.mp4 --themes peaceful exciting
+
+# Create 60-second videos
+python main.py input/*.mp4 --duration 60
+
+# Generate all 5 themes
+python main.py input/*.mp4 --themes happy exciting peaceful adventure cinematic
 
 # Custom output directory
-python main.py uploads/*.mp4 --output-dir my_videos
+python main.py input/*.mp4 --output-dir my_videos
 
 # Disable caching (force reprocessing)
-python main.py uploads/*.mp4 --no-cache
+python main.py input/*.mp4 --no-cache
 
 # Dry run (validate inputs without processing)
-python main.py uploads/*.mp4 --dry-run
+python main.py input/*.mp4 --dry-run
 ```
 
 ### System Testing
@@ -151,7 +161,8 @@ drone-video-generator/
 ├── requirements.txt        # Python dependencies
 ├── setup.py               # Package installation
 ├── .env.example           # Environment variables template
-├── uploads/               # Input video directory
+├── input/                 # Input video directory
+├── uploads/               # Legacy input directory (still supported)
 ├── output/                # Generated video directory
 ├── music/                 # Downloaded/generated music
 └── cache/                 # Processing cache
@@ -250,8 +261,8 @@ python test_system.py
 
 **1. "No valid video files found"**
 ```bash
-# Ensure videos are in uploads/ directory
-ls uploads/
+# Ensure videos are in input/ directory
+ls input/
 # Supported formats: .mp4, .mov, .avi, .mkv
 ```
 
@@ -289,10 +300,12 @@ echo "OPENAI_API_KEY=your_key_here" > .env
 
 ### Current MVP (v1.0.0) ✅
 - [x] Basic video processing and clip detection
-- [x] 5 themed video generation
-- [x] Music integration system
-- [x] AI-powered scene analysis
+- [x] 5 themed video generation (defaults to single theme for efficiency)
+- [x] Freesound.org music integration with Creative Commons licensing
+- [x] AI-powered scene analysis with OpenAI GPT-4 Vision
 - [x] Comprehensive testing suite
+- [x] Fixed authentication issues with music downloads
+- [x] Optimized for single-theme generation workflow
 
 ### Future Enhancements (v2.0.0)
 - [ ] **Human Prompt Integration**: Custom themes via text prompts
