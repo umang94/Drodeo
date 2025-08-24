@@ -1,0 +1,2 @@
+Sample music placeholder for adventure theme
+Replace with actual music file (.mp3, .wav, .m4a)

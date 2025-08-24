@@ -1,0 +1,2 @@
+Sample music placeholder for exciting theme
+Replace with actual music file (.mp3, .wav, .m4a)

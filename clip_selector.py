@@ -223,44 +223,50 @@ class ClipSelector:
         # Sort by best score descending
         scored_clips.sort(key=lambda x: x['best_score'], reverse=True)
         
-        # Distribute clips ensuring variety and balance
-        used_clips = set()
+        # For MVP: Allow clip reuse across themes to ensure variety
+        # This helps when we have limited clips but want multiple themed videos
+        min_clips_per_theme = 1  # Minimum clips needed to create a video
         
         # First pass: assign clips to their best-fitting theme
         for clip_data in scored_clips:
             clip = clip_data['clip']
             best_theme = clip_data['best_theme']
+            pool = theme_pools[best_theme]
             
-            if id(clip) not in used_clips:
-                pool = theme_pools[best_theme]
-                
-                # Check if we need more clips for this theme
-                if len(pool.clips) < self.target_clips_per_theme:
-                    pool.clips.append(clip)
-                    pool.total_duration += clip.duration
-                    pool.theme_score += clip_data['best_score']
-                    used_clips.add(id(clip))
+            # Always add to best theme if it needs clips
+            if len(pool.clips) < self.target_clips_per_theme:
+                pool.clips.append(clip)
+                pool.total_duration += clip.duration
+                pool.theme_score += clip_data['best_score']
         
-        # Second pass: fill remaining slots with next-best clips
+        # Second pass: ensure all themes have at least some clips for variety
+        # Allow clips to be reused if their theme score is reasonable (>0.3)
         for theme in VideoTheme:
             pool = theme_pools[theme]
-            if len(pool.clips) < self.target_clips_per_theme:
-                # Find clips that would fit this theme
-                remaining_clips = [cd for cd in scored_clips if id(cd['clip']) not in used_clips]
+            if len(pool.clips) < min_clips_per_theme:
+                # Find clips that could work for this theme
+                suitable_clips = []
+                for clip_data in scored_clips:
+                    theme_score = clip_data['theme_scores'][theme]
+                    if theme_score > 0.3:  # Reasonable fit
+                        suitable_clips.append((clip_data, theme_score))
                 
-                # Sort by score for this specific theme
-                theme_sorted = sorted(remaining_clips, 
-                                    key=lambda x: x['theme_scores'][theme], reverse=True)
+                # Sort by theme-specific score
+                suitable_clips.sort(key=lambda x: x[1], reverse=True)
                 
-                for clip_data in theme_sorted:
+                # Add clips until we have enough
+                for clip_data, theme_score in suitable_clips:
                     if len(pool.clips) >= self.target_clips_per_theme:
                         break
                     
                     clip = clip_data['clip']
-                    pool.clips.append(clip)
-                    pool.total_duration += clip.duration
-                    pool.theme_score += clip_data['theme_scores'][theme]
-                    used_clips.add(id(clip))
+                    # Check if this clip is already in this theme pool
+                    if not any(existing_clip.file_path == clip.file_path and 
+                             existing_clip.start_time == clip.start_time 
+                             for existing_clip in pool.clips):
+                        pool.clips.append(clip)
+                        pool.total_duration += clip.duration
+                        pool.theme_score += theme_score
     
     def _balance_theme_pools(self, theme_pools: Dict[VideoTheme, ThemeClipPool]):
         """Balance theme pools to ensure good variety and duration."""

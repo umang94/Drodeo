@@ -172,21 +172,62 @@ Examples:
             print("❌ No clips were successfully assigned to themes!")
             sys.exit(1)
         
-        # Print final summary
-        print(f"\n🎉 Processing complete!")
-        print(f"📊 Clip assignment summary:")
+        # Create themed videos using the video editor
+        print(f"\n🎬 Creating themed videos...")
+        from video_editor import VideoEditor
         
-        from config import THEME_CONFIGS
-        total_clips = 0
+        editor = VideoEditor(args.output_dir)
+        
+        # Convert theme pools to the format expected by video editor
+        theme_clips = {}
         for theme, pool in theme_pools.items():
-            theme_config = THEME_CONFIGS[theme]
-            clip_count = len(pool.clips)
-            total_clips += clip_count
-            print(f"   {theme_config.name}: {clip_count} clips ({pool.total_duration:.1f}s)")
+            if pool.clips:  # Only include themes with clips
+                # Convert VideoTheme enum to string value
+                theme_name = theme.value if hasattr(theme, 'value') else str(theme)
+                theme_clips[theme_name] = pool.clips
         
-        print(f"   Total: {total_clips} clips assigned to themes")
-        print(f"\n📁 Ready for video editing pipeline (Step 8)")
-        print(f"💡 Next: Implement video editing and music overlay")
+        if not theme_clips:
+            print("❌ No clips available for video creation!")
+            sys.exit(1)
+        
+        # Create videos for each theme
+        output_paths = editor.create_multiple_themed_videos(theme_clips, args.duration)
+        
+        # Print final summary
+        print(f"\n🎉 Video generation complete!")
+        print(f"📊 Generated videos:")
+        
+        from config import THEME_CONFIGS, VideoTheme
+        total_clips = 0
+        for theme_name, output_path in output_paths.items():
+            # Find the corresponding VideoTheme enum and pool
+            theme_enum = None
+            pool = None
+            for theme_key, theme_pool in theme_pools.items():
+                if theme_key.value == theme_name:
+                    theme_enum = theme_key
+                    pool = theme_pool
+                    break
+            
+            if pool and theme_enum:
+                theme_config = THEME_CONFIGS[theme_enum]
+                clip_count = len(pool.clips)
+                total_clips += clip_count
+                
+                # Get file size
+                file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
+                
+                print(f"   ✅ {theme_config.name}: {os.path.basename(output_path)} ({clip_count} clips, {pool.total_duration:.1f}s, {file_size_mb:.1f}MB)")
+        
+        print(f"\n📊 Summary:")
+        print(f"   Total clips used: {total_clips}")
+        print(f"   Videos created: {len(output_paths)}")
+        print(f"   Output directory: {args.output_dir}")
+        
+        # List any themes that didn't get videos
+        missing_themes = set(args.themes) - set(output_paths.keys())
+        if missing_themes:
+            print(f"   ⚠️  No videos created for: {', '.join(missing_themes)} (insufficient clips)")
         
     except KeyboardInterrupt:
         print("\n⏹️  Processing interrupted by user")
