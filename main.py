@@ -95,8 +95,8 @@ Examples:
         '--themes',
         nargs='*',
         choices=['happy', 'exciting', 'peaceful', 'adventure', 'cinematic'],
-        default=['happy', 'exciting', 'peaceful', 'adventure', 'cinematic'],
-        help='Themes to generate (default: all themes)'
+        default=['happy'],
+        help='Themes to generate (default: happy theme only)'
     )
     
     parser.add_argument(
@@ -179,12 +179,15 @@ Examples:
         editor = VideoEditor(args.output_dir)
         
         # Convert theme pools to the format expected by video editor
+        # Only include requested themes
         theme_clips = {}
         for theme, pool in theme_pools.items():
             if pool.clips:  # Only include themes with clips
                 # Convert VideoTheme enum to string value
                 theme_name = theme.value if hasattr(theme, 'value') else str(theme)
-                theme_clips[theme_name] = pool.clips
+                # Only include if this theme was requested
+                if theme_name in args.themes:
+                    theme_clips[theme_name] = pool.clips
         
         if not theme_clips:
             print("❌ No clips available for video creation!")

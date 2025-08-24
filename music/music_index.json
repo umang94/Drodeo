@@ -1,0 +1,15 @@
+{
+  "happy": [
+    {
+      "title": "Cheerful Song",
+      "path": "music/happy_freesound_391538_Cheerful Song.mp3",
+      "duration": 62.308,
+      "source": "freesound",
+      "track_id": 391538,
+      "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+      "username": "Unlistenable",
+      "download_count": 0,
+      "note": "Preview version (full download requires OAuth)"
+    }
+  ]
+}

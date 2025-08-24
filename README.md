@@ -26,11 +26,12 @@ The Drone Video Generator MVP is an intelligent video processing system that aut
 - **Multiple Formats**: Supports MP4, MOV, AVI, and MKV files
 
 ### 🎵 **Music & Audio**
-- **Royalty-Free Music**: Downloads from YouTube Audio Library
-- **Theme Matching**: Selects music that fits each video theme
+- **Royalty-Free Music**: Downloads from Freesound.org with Creative Commons licensing
+- **Theme Matching**: Selects music that fits each video theme perfectly
 - **Audio Mixing**: Balances original drone audio with background music
 - **Volume Optimization**: Ensures clear, audible output
-- **Fallback System**: Creates sample music when downloads fail
+- **Smart Caching**: Avoids re-downloading music with intelligent storage
+- **Fallback System**: Creates sample music when API is unavailable
 
 ### 🛠️ **System Features**
 - **Progress Tracking**: Real-time progress updates with detailed logging
@@ -71,11 +72,18 @@ The Drone Video Generator MVP is an intelligent video processing system that aut
    choco install ffmpeg
    ```
 
-4. **Set up OpenAI API (optional):**
+4. **Set up API keys:**
    ```bash
    cp .env.example .env
-   # Edit .env and add your OpenAI API key
+   # Edit .env and add your API keys:
+   # - OpenAI API key (optional, for enhanced AI analysis)
+   # - Freesound API key (optional, for music downloads)
    ```
+
+5. **Get Freesound API key (optional):**
+   - Visit [https://freesound.org/apiv2/apply/](https://freesound.org/apiv2/apply/)
+   - Create account and apply for API access
+   - Add your API key to `.env` file
 
 ### Basic Usage
 
@@ -330,7 +338,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **OpenAI** for GPT-4 Vision API
 - **MoviePy** for video editing capabilities
 - **OpenCV** for computer vision processing
-- **yt-dlp** for music downloading
+- **Freesound.org** for royalty-free music API
 - **scipy** for audio processing
 - The drone community for inspiration and feedback
 

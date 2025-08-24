@@ -15,12 +15,15 @@ import requests
 import json
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
-import yt_dlp
 from urllib.parse import urlparse
 import time
 import random
+from dotenv import load_dotenv
 
 from config import MUSIC_CONFIG, THEME_CONFIGS, VideoTheme
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -143,9 +146,7 @@ class MusicDownloader:
         """
         # Try different music sources
         sources = [
-            self._download_from_youtube_audio_library,
-            self._download_from_freesound,
-            self._download_from_pixabay
+            self._download_from_freesound
         ]
         
         for source_func in sources:
@@ -159,101 +160,10 @@ class MusicDownloader:
         
         return None
     
-    def _download_from_youtube_audio_library(self, theme: str, duration: int) -> Optional[str]:
-        """
-        Download music from YouTube Audio Library using yt-dlp
-        
-        Args:
-            theme: Theme name
-            duration: Target duration in seconds
-            
-        Returns:
-            Path to downloaded music file
-        """
-        print(f"   🔍 Searching YouTube Audio Library for {theme} music...")
-        
-        # Get search terms for the theme
-        theme_config = None
-        for theme_enum in VideoTheme:
-            if theme_enum.value == theme:
-                theme_config = THEME_CONFIGS[theme_enum]
-                break
-        
-        if not theme_config:
-            return None
-        
-        # Create search query
-        keywords = theme_config.music_keywords[:3]  # Use top 3 keywords
-        search_query = f"royalty free {' '.join(keywords)} music instrumental"
-        
-        # Configure yt-dlp options
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': os.path.join(self.music_dir, f'{theme}_%(title)s.%(ext)s'),
-            'extractaudio': True,
-            'audioformat': 'mp3',
-            'audioquality': '192K',
-            'quiet': True,
-            'no_warnings': True,
-            'ignoreerrors': True,
-        }
-        
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # Search for videos
-                search_results = ydl.extract_info(
-                    f"ytsearch5:{search_query}",
-                    download=False
-                )
-                
-                if not search_results or 'entries' not in search_results:
-                    return None
-                
-                # Filter for appropriate duration and download first suitable track
-                for entry in search_results['entries']:
-                    if not entry:
-                        continue
-                    
-                    video_duration = entry.get('duration', 0)
-                    title = entry.get('title', 'Unknown')
-                    
-                    # Check if duration is suitable (within 50% of target)
-                    if video_duration and abs(video_duration - duration) <= duration * 0.5:
-                        print(f"   📥 Downloading: {title[:50]}...")
-                        
-                        # Download the track
-                        ydl.download([entry['webpage_url']])
-                        
-                        # Find the downloaded file
-                        expected_path = os.path.join(self.music_dir, f"{theme}_{title}.mp3")
-                        
-                        # Look for any new mp3 files in the music directory
-                        for file in os.listdir(self.music_dir):
-                            if file.startswith(theme) and file.endswith('.mp3'):
-                                file_path = os.path.join(self.music_dir, file)
-                                
-                                # Update index
-                                if theme not in self.downloaded_tracks:
-                                    self.downloaded_tracks[theme] = []
-                                
-                                self.downloaded_tracks[theme].append({
-                                    'title': title,
-                                    'path': file_path,
-                                    'duration': video_duration,
-                                    'source': 'youtube_audio_library'
-                                })
-                                self._save_music_index()
-                                
-                                return file_path
-                
-        except Exception as e:
-            logger.debug(f"YouTube Audio Library download failed: {e}")
-        
-        return None
     
     def _download_from_freesound(self, theme: str, duration: int) -> Optional[str]:
         """
-        Download music from Freesound (requires API key)
+        Download music from Freesound API
         
         Args:
             theme: Theme name
@@ -262,26 +172,209 @@ class MusicDownloader:
         Returns:
             Path to downloaded music file
         """
-        # This would require a Freesound API key
-        # For now, we'll skip this implementation
-        logger.debug("Freesound integration not implemented (requires API key)")
-        return None
+        print(f"   🔍 Searching Freesound for {theme} music...")
+        
+        # Get API key from environment
+        api_key = os.getenv('FREESOUND_API_KEY')
+        if not api_key:
+            logger.debug("Freesound API key not found in environment")
+            return None
+        
+        # Get theme-specific search terms
+        search_terms = self._get_freesound_search_terms(theme)
+        
+        try:
+            # Search for tracks
+            tracks = self._search_freesound_tracks(api_key, search_terms, duration)
+            if not tracks:
+                print(f"   ⚠️  No suitable tracks found for {theme}")
+                return None
+            
+            # Select best track
+            best_track = self._select_best_freesound_track(tracks, duration)
+            if not best_track:
+                print(f"   ⚠️  No suitable tracks found for {theme}")
+                return None
+            
+            # Download the track
+            return self._download_freesound_track(best_track, theme, api_key)
+            
+        except Exception as e:
+            logger.debug(f"Freesound integration error: {e}")
+            return None
     
-    def _download_from_pixabay(self, theme: str, duration: int) -> Optional[str]:
-        """
-        Download music from Pixabay (requires API key)
+    def _get_freesound_search_terms(self, theme: str) -> List[str]:
+        """Get Freesound search terms for a theme"""
+        search_mapping = {
+            'happy': ['upbeat', 'cheerful', 'positive music', 'joyful', 'bright music'],
+            'exciting': ['energetic', 'action', 'intense music', 'dynamic', 'powerful music'],
+            'peaceful': ['ambient', 'calm', 'relaxing music', 'serene', 'meditation music'],
+            'adventure': ['epic', 'cinematic', 'dramatic music', 'heroic', 'inspiring music'],
+            'cinematic': ['orchestral', 'soundtrack', 'film music', 'emotional music', 'dramatic']
+        }
         
-        Args:
-            theme: Theme name
-            duration: Target duration in seconds
+        return search_mapping.get(theme, ['instrumental', 'background music'])
+    
+    def _search_freesound_tracks(self, api_key: str, search_terms: List[str], target_duration: int) -> List[Dict]:
+        """Search for tracks on Freesound"""
+        all_tracks = []
+        
+        # Try each search term
+        for term in search_terms[:2]:  # Limit to 2 terms to avoid rate limiting
+            try:
+                # Freesound API search parameters
+                params = {
+                    'token': api_key,
+                    'query': term,
+                    'filter': f'duration:[{max(30, target_duration-60)} TO {target_duration+120}] type:wav OR type:mp3',
+                    'sort': 'downloads_desc',  # Sort by popularity
+                    'fields': 'id,name,description,duration,download,previews,license,username,download_count',
+                    'page_size': 10
+                }
+                
+                response = requests.get('https://freesound.org/apiv2/search/text/', 
+                                      params=params, timeout=10)
+                response.raise_for_status()
+                
+                data = response.json()
+                tracks = data.get('results', [])
+                
+                # Filter for suitable licenses (CC0 or CC BY)
+                suitable_tracks = []
+                for track in tracks:
+                    license_url = track.get('license', '').lower()
+                    # Check for Creative Commons licenses by URL patterns
+                    is_cc = any(pattern in license_url for pattern in [
+                        'creativecommons.org/publicdomain/zero',  # CC0
+                        'creativecommons.org/licenses/by',        # CC BY
+                        'cc0',
+                        'cc by'
+                    ])
+                    if is_cc:
+                        suitable_tracks.append(track)
+                
+                all_tracks.extend(suitable_tracks)
+                
+                # Add small delay to respect rate limits
+                time.sleep(0.5)
+                
+            except Exception as e:
+                logger.debug(f"Failed to search Freesound for '{term}': {e}")
+                continue
+        
+        return all_tracks
+    
+    def _select_best_freesound_track(self, tracks: List[Dict], target_duration: int) -> Optional[Dict]:
+        """Select the best track from Freesound results"""
+        if not tracks:
+            return None
+        
+        scored_tracks = []
+        
+        for track in tracks:
+            duration = track.get('duration', 0)
             
-        Returns:
-            Path to downloaded music file
-        """
-        # This would require a Pixabay API key
-        # For now, we'll skip this implementation
-        logger.debug("Pixabay integration not implemented (requires API key)")
-        return None
+            # Skip tracks that are too short or too long
+            if duration < 20 or duration > target_duration * 2:
+                continue
+            
+            # Calculate duration score (prefer close to target)
+            duration_diff = abs(duration - target_duration)
+            duration_score = max(0, 1 - (duration_diff / target_duration))
+            
+            # Popularity score based on download count
+            downloads = track.get('download_count', 0)
+            popularity_score = min(1.0, downloads / 100)  # Normalize to 0-1
+            
+            # License preference (CC0 is better than CC BY)
+            license_name = track.get('license', '').lower()
+            license_score = 1.0 if 'cc0' in license_name else 0.8
+            
+            # Combined score
+            total_score = (duration_score * 0.5 + 
+                          popularity_score * 0.3 + 
+                          license_score * 0.2)
+            
+            scored_tracks.append((total_score, track))
+        
+        if not scored_tracks:
+            return None
+        
+        # Return best scoring track
+        scored_tracks.sort(key=lambda x: x[0], reverse=True)
+        return scored_tracks[0][1]
+    
+    def _download_freesound_track(self, track: Dict, theme: str, api_key: str) -> Optional[str]:
+        """Download a specific track from Freesound using preview (full downloads require OAuth)"""
+        try:
+            track_id = track.get('id')
+            track_name = track.get('name', 'Unknown')
+            
+            # Create filename
+            safe_name = "".join(c for c in track_name if c.isalnum() or c in (' ', '-', '_')).rstrip()[:30]
+            filename = f"{theme}_freesound_{track_id}_{safe_name}.mp3"
+            filepath = os.path.join(self.music_dir, filename)
+            
+            # Skip if already downloaded
+            if os.path.exists(filepath):
+                print(f"   ✅ Using cached Freesound track: {filename}")
+                return filepath
+            
+            print(f"   📥 Downloading preview: {track_name}...")
+            
+            # First get the full track details to access preview URLs
+            sound_url = f'https://freesound.org/apiv2/sounds/{track_id}/'
+            params = {'token': api_key}
+            
+            response = requests.get(sound_url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            sound_data = response.json()
+            previews = sound_data.get('previews', {})
+            
+            # Try to get the best quality preview
+            preview_url = None
+            for quality in ['preview-hq-mp3', 'preview-lq-mp3']:
+                if quality in previews:
+                    preview_url = previews[quality]
+                    break
+            
+            if not preview_url:
+                logger.debug(f"No preview URL available for track {track_id}")
+                return None
+            
+            # Download the preview file
+            preview_response = requests.get(preview_url, timeout=30)
+            preview_response.raise_for_status()
+            
+            # Save to file
+            with open(filepath, 'wb') as f:
+                f.write(preview_response.content)
+            
+            # Update music index
+            if theme not in self.downloaded_tracks:
+                self.downloaded_tracks[theme] = []
+            
+            self.downloaded_tracks[theme].append({
+                'title': track_name,
+                'path': filepath,
+                'duration': sound_data.get('duration', 0),
+                'source': 'freesound',
+                'track_id': track_id,
+                'license': sound_data.get('license', 'Unknown'),
+                'username': sound_data.get('username', 'Unknown'),
+                'download_count': sound_data.get('download_count', 0),
+                'note': 'Preview version (full download requires OAuth)'
+            })
+            self._save_music_index()
+            
+            print(f"   ✅ Downloaded Freesound preview: {filename}")
+            return filepath
+            
+        except Exception as e:
+            logger.debug(f"Failed to download Freesound track: {e}")
+            return None
+    
     
     def _get_fallback_music(self) -> Optional[str]:
         """Get any available music file as fallback"""
