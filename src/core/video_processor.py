@@ -35,10 +35,10 @@ class VideoProcessor:
     """Main video processing coordinator with GPU acceleration support."""
     
     def __init__(self, use_gpu: bool = True):
-        self.frame_sample_rate = 30  # analyze every 30th frame for speed
-        self.min_clip_duration = 2.0  # minimum 2 seconds
-        self.max_clip_duration = 15.0  # maximum 15 seconds
-        self.keyframes_per_video = 8  # number of keyframes to extract for AI analysis
+        self.frame_sample_rate = 10  # analyze every 10th frame for better coverage
+        self.min_clip_duration = 1.0  # minimum 1 second (more flexible)
+        self.max_clip_duration = 25.0  # maximum 25 seconds (more flexible)
+        self.keyframes_per_video = 16  # more keyframes for better AI analysis
         
         # Initialize GPU processor if available
         self.use_gpu = use_gpu and GPU_AVAILABLE
@@ -241,7 +241,7 @@ class VideoProcessor:
         return scene_changes
     
     def select_best_clips(self, video_path: str, motion_scores: List[float], scene_changes: List[float]) -> List[VideoClip]:
-        """Select the best clips based on motion analysis and scene changes."""
+        """Select the best clips based on motion analysis and scene changes with multiple strategies."""
         video_info = self.get_video_info(video_path)
         duration = video_info['duration']
         fps = video_info['fps']
@@ -254,23 +254,49 @@ class VideoProcessor:
             timestamp = (i * self.frame_sample_rate) / fps
             motion_timestamps.append((timestamp, score))
         
-        # Find high-motion segments
-        motion_threshold = np.percentile(motion_scores, 70)  # Top 30% motion
+        # Strategy 1: High-motion segments (40th percentile - more inclusive)
+        motion_threshold_high = np.percentile(motion_scores, 60)
+        clips.extend(self._extract_motion_clips(motion_timestamps, motion_threshold_high, video_path, "High motion"))
         
+        # Strategy 2: Medium-motion segments for variety
+        motion_threshold_med = np.percentile(motion_scores, 40)
+        clips.extend(self._extract_motion_clips(motion_timestamps, motion_threshold_med, video_path, "Medium motion", max_clips=5))
+        
+        # Strategy 3: Scene change clips (transitions)
+        clips.extend(self._extract_scene_change_clips(scene_changes, video_path))
+        
+        # Strategy 4: Ensure minimum clips per video (quality fallback)
+        if len(clips) < 3:
+            print(f"   📈 Adding fallback clips to ensure minimum coverage")
+            clips.extend(self._extract_fallback_clips(motion_timestamps, video_path))
+        
+        # Remove duplicates and sort by quality
+        clips = self._deduplicate_clips(clips)
+        clips.sort(key=lambda x: x.quality_score, reverse=True)
+        
+        # Return top clips but ensure we have at least 2 clips per video
+        max_clips = max(20, min(2, len(clips)))
+        return clips[:max_clips]
+    
+    def _extract_motion_clips(self, motion_timestamps: List[Tuple[float, float]], threshold: float, 
+                            video_path: str, description: str, max_clips: int = 10) -> List[VideoClip]:
+        """Extract clips based on motion threshold."""
+        clips = []
         current_clip_start = None
         current_clip_scores = []
+        clips_found = 0
         
         for timestamp, motion_score in motion_timestamps:
-            if motion_score > motion_threshold:
+            if motion_score > threshold and clips_found < max_clips:
                 if current_clip_start is None:
                     current_clip_start = timestamp
                 current_clip_scores.append(motion_score)
             else:
-                # End of high-motion segment
+                # End of motion segment
                 if current_clip_start is not None and len(current_clip_scores) > 0:
                     clip_duration = timestamp - current_clip_start
                     
-                    # Only keep clips within duration limits
+                    # More flexible duration limits
                     if self.min_clip_duration <= clip_duration <= self.max_clip_duration:
                         avg_motion = np.mean(current_clip_scores)
                         
@@ -278,8 +304,9 @@ class VideoProcessor:
                         mid_timestamp = current_clip_start + clip_duration / 2
                         brightness_score = self._get_frame_brightness(video_path, mid_timestamp)
                         
-                        # Calculate overall quality score
-                        quality_score = (avg_motion / 100.0) * 0.7 + brightness_score * 0.3
+                        # Enhanced quality scoring
+                        motion_norm = min(avg_motion / 50.0, 1.0)  # Normalize motion score
+                        quality_score = motion_norm * 0.6 + brightness_score * 0.4
                         
                         clip = VideoClip(
                             start_time=current_clip_start,
@@ -289,16 +316,124 @@ class VideoProcessor:
                             motion_score=avg_motion,
                             brightness_score=brightness_score,
                             file_path=video_path,
-                            description=f"High motion segment ({clip_duration:.1f}s)"
+                            description=f"{description} segment ({clip_duration:.1f}s)"
                         )
                         clips.append(clip)
+                        clips_found += 1
                     
                     current_clip_start = None
                     current_clip_scores = []
         
-        # Sort clips by quality score and return top ones
-        clips.sort(key=lambda x: x.quality_score, reverse=True)
-        return clips[:15]  # Return top 15 clips per video
+        return clips
+    
+    def _extract_scene_change_clips(self, scene_changes: List[float], video_path: str) -> List[VideoClip]:
+        """Extract clips around scene changes for transitions."""
+        clips = []
+        
+        for change_time in scene_changes[:5]:  # Limit to 5 scene changes
+            # Create a clip around the scene change
+            start_time = max(0, change_time - 2.0)  # 2 seconds before
+            end_time = change_time + 3.0  # 3 seconds after
+            duration = end_time - start_time
+            
+            if duration >= self.min_clip_duration:
+                # Get brightness score for the transition
+                brightness_score = self._get_frame_brightness(video_path, change_time)
+                
+                # Scene changes are valuable for transitions
+                quality_score = 0.7 + brightness_score * 0.3
+                
+                clip = VideoClip(
+                    start_time=start_time,
+                    end_time=end_time,
+                    duration=duration,
+                    quality_score=quality_score,
+                    motion_score=30.0,  # Moderate motion score
+                    brightness_score=brightness_score,
+                    file_path=video_path,
+                    description=f"Scene transition ({duration:.1f}s)"
+                )
+                clips.append(clip)
+        
+        return clips
+    
+    def _extract_fallback_clips(self, motion_timestamps: List[Tuple[float, float]], video_path: str) -> List[VideoClip]:
+        """Extract fallback clips to ensure minimum coverage."""
+        clips = []
+        
+        if not motion_timestamps:
+            return clips
+        
+        # Get video duration
+        video_info = self.get_video_info(video_path)
+        duration = video_info['duration']
+        
+        # Extract clips from different parts of the video
+        segments = [
+            (0, min(duration * 0.2, 5.0)),  # Beginning
+            (duration * 0.4, duration * 0.4 + 5.0),  # Middle
+            (max(0, duration - 5.0), duration)  # End
+        ]
+        
+        for i, (start, end) in enumerate(segments):
+            if end > duration:
+                end = duration
+            if end - start < self.min_clip_duration:
+                continue
+                
+            # Find motion scores in this segment
+            segment_scores = []
+            for timestamp, score in motion_timestamps:
+                if start <= timestamp <= end:
+                    segment_scores.append(score)
+            
+            if segment_scores:
+                avg_motion = np.mean(segment_scores)
+                brightness_score = self._get_frame_brightness(video_path, (start + end) / 2)
+                
+                # Lower quality score for fallback clips
+                quality_score = 0.3 + (avg_motion / 100.0) * 0.4 + brightness_score * 0.3
+                
+                clip = VideoClip(
+                    start_time=start,
+                    end_time=end,
+                    duration=end - start,
+                    quality_score=quality_score,
+                    motion_score=avg_motion,
+                    brightness_score=brightness_score,
+                    file_path=video_path,
+                    description=f"Fallback segment {i+1} ({end-start:.1f}s)"
+                )
+                clips.append(clip)
+        
+        return clips
+    
+    def _deduplicate_clips(self, clips: List[VideoClip]) -> List[VideoClip]:
+        """Remove overlapping clips, keeping the higher quality ones."""
+        if not clips:
+            return clips
+        
+        # Sort by start time
+        clips.sort(key=lambda x: x.start_time)
+        
+        deduplicated = []
+        for clip in clips:
+            # Check for overlap with existing clips
+            overlaps = False
+            for existing in deduplicated:
+                if (clip.start_time < existing.end_time and clip.end_time > existing.start_time):
+                    # There's an overlap
+                    if clip.quality_score > existing.quality_score:
+                        # Replace the existing clip with the better one
+                        deduplicated.remove(existing)
+                        deduplicated.append(clip)
+                    overlaps = True
+                    break
+            
+            if not overlaps:
+                deduplicated.append(clip)
+        
+        return deduplicated
     
     def _get_frame_brightness(self, video_path: str, timestamp: float) -> float:
         """Get brightness score for a frame at specific timestamp."""

@@ -60,6 +60,7 @@ music/*.aac
 music/*.flac
 music/*.ogg
 music/*.mhtml
+music/music_index.json
 
 # OS
 .DS_Store
