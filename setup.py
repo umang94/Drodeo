@@ -33,18 +33,19 @@ setup(
     url="https://github.com/your-username/drone-video-generator",
     
     # Package configuration
-    packages=find_packages(),
+    packages=find_packages(where='.', include=['src*']),
+    package_dir={'': '.'},
     py_modules=[
         'main',
-        'video_processor',
-        'ai_analyzer', 
-        'clip_selector',
-        'video_editor',
-        'music_downloader',
-        'cache_manager',
-        'progress_tracker',
-        'config',
-        'test_system'
+        'src.core.video_processor',
+        'src.core.ai_analyzer', 
+        'src.core.clip_selector',
+        'src.editing.video_editor',
+        'src.editing.music_downloader',
+        'src.utils.cache_manager',
+        'src.utils.progress_tracker',
+        'src.utils.config',
+        'src.tests.test_system'
     ],
     
     # Dependencies

@@ -265,8 +265,8 @@ class VideoProcessor:
     
     def process_video(self, video_path: str, use_cache: bool = True, use_ai: bool = True) -> Tuple[List[VideoClip], List[np.ndarray]]:
         """Process a single video and return clips and keyframes."""
-        from cache_manager import CacheManager
-        from ai_analyzer import analyze_video_with_ai, AIAnalyzer
+        from src.utils.cache_manager import CacheManager
+        from src.core.ai_analyzer import analyze_video_with_ai, AIAnalyzer
         
         print(f"🎬 Analyzing {Path(video_path).name}...")
         

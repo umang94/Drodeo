@@ -12,7 +12,7 @@ import numpy as np
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 from dataclasses import asdict
-from video_processor import VideoClip
+from src.core.video_processor import VideoClip
 
 class CacheManager:
     """Manages caching of video processing results."""

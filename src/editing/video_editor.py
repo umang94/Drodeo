@@ -21,9 +21,9 @@ import moviepy.video.fx.all as vfx
 import numpy as np
 from tqdm import tqdm
 
-from config import THEME_CONFIGS, VIDEO_CONFIG
-from video_processor import VideoClip
-from music_downloader import MusicDownloader
+from src.utils.config import THEME_CONFIGS, VIDEO_CONFIG
+from src.core.video_processor import VideoClip
+from src.editing.music_downloader import MusicDownloader
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

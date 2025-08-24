@@ -8,9 +8,9 @@ from typing import List, Dict, Tuple
 from dataclasses import dataclass
 from collections import defaultdict
 import random
-from config import VideoTheme, THEME_CONFIGS, VIDEO_CONFIG
-from video_processor import VideoClip
-from ai_analyzer import AIAnalyzer
+from src.utils.config import VideoTheme, THEME_CONFIGS, VIDEO_CONFIG
+from src.core.video_processor import VideoClip
+from src.core.ai_analyzer import AIAnalyzer
 
 @dataclass
 class ThemeClipPool:
@@ -391,6 +391,6 @@ if __name__ == "__main__":
     
     # This would normally be called with real clips and AI analyses
     # For testing, we'll just verify the imports work
-    from config import VideoTheme, THEME_CONFIGS
+    from src.utils.config import VideoTheme, THEME_CONFIGS
     print(f"Available themes: {[theme.value for theme in VideoTheme]}")
     print("Clip Selector module loaded successfully!")

@@ -20,7 +20,7 @@ import time
 import random
 from dotenv import load_dotenv
 
-from config import MUSIC_CONFIG, THEME_CONFIGS, VideoTheme
+from src.utils.config import MUSIC_CONFIG, THEME_CONFIGS, VideoTheme
 
 # Load environment variables
 load_dotenv()

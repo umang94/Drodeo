@@ -23,9 +23,9 @@ def validate_video_file(file_path):
 
 def process_videos_for_themes(video_paths, use_cache=True):
     """Process multiple videos and assign clips to themes."""
-    from video_processor import VideoProcessor
-    from clip_selector import select_clips_for_themes
-    from cache_manager import CacheManager
+    from src.core.video_processor import VideoProcessor
+    from src.core.clip_selector import select_clips_for_themes
+    from src.utils.cache_manager import CacheManager
     
     processor = VideoProcessor()
     cache_manager = CacheManager() if use_cache else None
@@ -128,7 +128,7 @@ Examples:
     
     # Handle cache management
     if args.clear_cache:
-        from cache_manager import CacheManager
+        from src.utils.cache_manager import CacheManager
         cache_manager = CacheManager()
         cache_manager.clear_cache()
         cache_manager.print_cache_stats()
@@ -174,7 +174,7 @@ Examples:
         
         # Create themed videos using the video editor
         print(f"\n🎬 Creating themed videos...")
-        from video_editor import VideoEditor
+        from src.editing.video_editor import VideoEditor
         
         editor = VideoEditor(args.output_dir)
         
@@ -200,7 +200,7 @@ Examples:
         print(f"\n🎉 Video generation complete!")
         print(f"📊 Generated videos:")
         
-        from config import THEME_CONFIGS, VideoTheme
+        from src.utils.config import THEME_CONFIGS, VideoTheme
         total_clips = 0
         for theme_name, output_path in output_paths.items():
             # Find the corresponding VideoTheme enum and pool
