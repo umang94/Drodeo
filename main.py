@@ -21,19 +21,51 @@ def validate_video_file(file_path):
     
     return True, "Valid video file"
 
-def process_single_video(video_path, use_cache=True):
-    """Process a single video file using real video analysis."""
+def process_videos_for_themes(video_paths, use_cache=True):
+    """Process multiple videos and assign clips to themes."""
     from video_processor import VideoProcessor
+    from clip_selector import select_clips_for_themes
+    from cache_manager import CacheManager
     
-    try:
-        processor = VideoProcessor()
-        clips, keyframes = processor.process_video(video_path, use_cache=use_cache)
+    processor = VideoProcessor()
+    cache_manager = CacheManager() if use_cache else None
+    
+    all_clips = []
+    ai_analyses_by_video = {}
+    
+    # Process each video
+    for i, video_path in enumerate(video_paths, 1):
+        print(f"\n[{i}/{len(video_paths)}] Processing {Path(video_path).name}")
         
-        print(f"✓ Completed: {os.path.basename(video_path)} - {len(clips)} clips found")
-        return clips, keyframes
-    except Exception as e:
-        print(f"❌ Error processing {video_path}: {e}")
-        return [], []
+        try:
+            clips, keyframes = processor.process_video(video_path, use_cache=use_cache)
+            all_clips.extend(clips)
+            
+            # Get AI analyses from cache if available
+            if cache_manager and cache_manager.has_cache(video_path):
+                cached_result = cache_manager.load_cache(video_path)
+                if cached_result:
+                    # Handle both old (4 elements) and new (5 elements) cache formats
+                    if len(cached_result) >= 5:  # New format with AI analyses
+                        ai_analyses_by_video[video_path] = cached_result[4]
+                    elif len(cached_result) == 4:  # Old format without AI analyses
+                        ai_analyses_by_video[video_path] = []  # No AI analyses available
+            
+            print(f"✓ Completed: {Path(video_path).name} - {len(clips)} clips found")
+            
+        except Exception as e:
+            print(f"❌ Error processing {video_path}: {e}")
+            continue
+    
+    if not all_clips:
+        print("❌ No clips found in any videos!")
+        return {}
+    
+    # Assign clips to themes
+    print(f"\n🎨 Assigning {len(all_clips)} total clips to themes...")
+    theme_pools = select_clips_for_themes(all_clips, ai_analyses_by_video)
+    
+    return theme_pools
 
 def main():
     parser = argparse.ArgumentParser(
@@ -49,7 +81,7 @@ Examples:
     
     parser.add_argument(
         'videos',
-        nargs='+',
+        nargs='*',
         help='One or more drone video files to process'
     )
     
@@ -130,23 +162,38 @@ Examples:
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
     
-    # Process videos
+    # Process videos and assign to themes
     print(f"\n🚀 Processing {len(valid_videos)} video(s)...")
     
-    for i, video_path in enumerate(valid_videos, 1):
-        print(f"\n[{i}/{len(valid_videos)}] {os.path.basename(video_path)}")
-        try:
-            success = process_single_video(video_path, use_cache=not args.no_cache)
-            if not success:
-                print(f"❌ Failed to process {video_path}")
-        except KeyboardInterrupt:
-            print("\n⏹️  Processing interrupted by user")
+    try:
+        theme_pools = process_videos_for_themes(valid_videos, use_cache=not args.no_cache)
+        
+        if not theme_pools:
+            print("❌ No clips were successfully assigned to themes!")
             sys.exit(1)
-        except Exception as e:
-            print(f"❌ Error processing {video_path}: {str(e)}")
-    
-    print(f"\n🎉 Processing complete!")
-    print(f"📁 Check {args.output_dir}/ for generated videos")
+        
+        # Print final summary
+        print(f"\n🎉 Processing complete!")
+        print(f"📊 Clip assignment summary:")
+        
+        from config import THEME_CONFIGS
+        total_clips = 0
+        for theme, pool in theme_pools.items():
+            theme_config = THEME_CONFIGS[theme]
+            clip_count = len(pool.clips)
+            total_clips += clip_count
+            print(f"   {theme_config.name}: {clip_count} clips ({pool.total_duration:.1f}s)")
+        
+        print(f"   Total: {total_clips} clips assigned to themes")
+        print(f"\n📁 Ready for video editing pipeline (Step 8)")
+        print(f"💡 Next: Implement video editing and music overlay")
+        
+    except KeyboardInterrupt:
+        print("\n⏹️  Processing interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error during processing: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -89,7 +89,7 @@ class CacheManager:
         return cache_file.exists()
     
     def save_cache(self, video_path: str, clips: List[VideoClip], keyframes: List[np.ndarray], 
-                   motion_scores: List[float], scene_changes: List[float]) -> None:
+                   motion_scores: List[float], scene_changes: List[float], ai_analyses: List[Dict] = None) -> None:
         """Save video processing results to cache."""
         try:
             # Clean up old keyframes first
@@ -106,6 +106,7 @@ class CacheManager:
                 'keyframe_paths': keyframe_paths,
                 'motion_scores': motion_scores,
                 'scene_changes': scene_changes,
+                'ai_analyses': ai_analyses or [],
                 'cached_at': os.path.getctime(video_path)
             }
             

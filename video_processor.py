@@ -263,9 +263,10 @@ class VideoProcessor:
             return self.calculate_brightness_score(frame)
         return 0.5
     
-    def process_video(self, video_path: str, use_cache: bool = True) -> Tuple[List[VideoClip], List[np.ndarray]]:
+    def process_video(self, video_path: str, use_cache: bool = True, use_ai: bool = True) -> Tuple[List[VideoClip], List[np.ndarray]]:
         """Process a single video and return clips and keyframes."""
         from cache_manager import CacheManager
+        from ai_analyzer import analyze_video_with_ai, AIAnalyzer
         
         print(f"🎬 Analyzing {Path(video_path).name}...")
         
@@ -276,9 +277,19 @@ class VideoProcessor:
         if cache_manager and cache_manager.has_cache(video_path):
             cached_result = cache_manager.load_cache(video_path)
             if cached_result:
-                clips, keyframes, motion_scores, scene_changes = cached_result
-                print(f"   ✅ Found {len(clips)} good clips, {len(keyframes)} keyframes (cached)")
-                return clips, keyframes
+                # Handle both old (4 elements) and new (5 elements) cache formats
+                if len(cached_result) >= 5:
+                    clips, keyframes, motion_scores, scene_changes, ai_analyses = cached_result
+                elif len(cached_result) == 4:
+                    clips, keyframes, motion_scores, scene_changes = cached_result
+                    ai_analyses = []  # No AI analyses in old format
+                else:
+                    # Invalid cache format, skip
+                    cached_result = None
+                
+                if cached_result:
+                    print(f"   ✅ Found {len(clips)} good clips, {len(keyframes)} keyframes (cached)")
+                    return clips, keyframes
         
         # Get video info
         video_info = self.get_video_info(video_path)
@@ -287,6 +298,17 @@ class VideoProcessor:
         # Extract keyframes for AI analysis
         print("   Extracting keyframes...")
         keyframes = self.extract_keyframes(video_path)
+        
+        # AI Analysis of keyframes
+        ai_analyses = []
+        if use_ai:
+            try:
+                ai_analyses = analyze_video_with_ai(keyframes, Path(video_path).name)
+                if not ai_analyses:
+                    ai_analyses = []
+            except Exception as e:
+                print(f"   ⚠️  AI analysis skipped: {e}")
+                ai_analyses = []
         
         # Analyze motion
         print("   Analyzing motion patterns...")
@@ -300,9 +322,17 @@ class VideoProcessor:
         print("   Selecting best clips...")
         clips = self.select_best_clips(video_path, motion_scores, scene_changes)
         
+        # Enhance clips with AI analysis
+        if ai_analyses and use_ai:
+            try:
+                analyzer = AIAnalyzer()
+                clips = analyzer.enhance_clip_scoring(clips, ai_analyses)
+            except Exception as e:
+                print(f"   ⚠️  AI enhancement skipped: {e}")
+        
         # Save to cache
         if cache_manager:
-            cache_manager.save_cache(video_path, clips, keyframes, motion_scores, scene_changes)
+            cache_manager.save_cache(video_path, clips, keyframes, motion_scores, scene_changes, ai_analyses)
         
         print(f"   ✅ Found {len(clips)} good clips, {len(keyframes)} keyframes")
         
