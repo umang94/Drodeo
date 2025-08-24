@@ -64,14 +64,36 @@ class GPUVideoProcessor:
     
     def _initialize_gpu_libraries(self):
         """Initialize GPU libraries."""
-        try:
-            import cupy as cp
-            self.cupy = cp
-            logger.debug("CuPy initialized successfully")
-        except ImportError:
-            logger.warning("CuPy not available - some GPU operations will be disabled")
-            self.use_gpu = False
-            return
+        self.torch = None
+        self.device = None
+        
+        # Initialize PyTorch for MPS or CUDA
+        if self.capabilities.has_mps or self.capabilities.has_cuda:
+            try:
+                import torch
+                self.torch = torch
+                
+                if self.capabilities.has_mps:
+                    self.device = torch.device("mps")
+                    logger.debug("PyTorch MPS initialized successfully")
+                elif self.capabilities.has_cuda:
+                    self.device = torch.device("cuda:0")
+                    logger.debug("PyTorch CUDA initialized successfully")
+                    
+            except ImportError:
+                logger.warning("PyTorch not available - GPU operations will be disabled")
+                self.use_gpu = False
+                return
+        
+        # Try to initialize CuPy for CUDA-specific operations
+        if self.capabilities.has_cuda:
+            try:
+                import cupy as cp
+                self.cupy = cp
+                logger.debug("CuPy initialized successfully")
+            except ImportError:
+                logger.debug("CuPy not available - using PyTorch for GPU operations")
+                self.cupy = None
         
         # Check OpenCV CUDA support
         if self.capabilities.can_accelerate_opencv:
@@ -101,7 +123,7 @@ class GPUVideoProcessor:
         
         frames = []
         
-        if self.use_gpu and self.cupy is not None:
+        if self.use_gpu and (self.torch is not None):
             frames = self._extract_frames_gpu(cap, frame_indices, target_size)
         else:
             frames = self._extract_frames_cpu(cap, frame_indices, target_size)
@@ -162,41 +184,94 @@ class GPUVideoProcessor:
     def _process_frame_batch_gpu(self, frames: List[np.ndarray], 
                                 target_size: Tuple[int, int]) -> List[np.ndarray]:
         """Process a batch of frames on GPU."""
-        if not self.cupy:
-            return [cv2.resize(frame, target_size) for frame in frames]
-        
         processed_frames = []
         
         try:
-            # Convert frames to GPU arrays
-            gpu_frames = []
-            for frame in frames:
-                gpu_frame = self.cupy.asarray(frame)
-                gpu_frames.append(gpu_frame)
-            
-            # Process each frame (resize operation)
-            for gpu_frame in gpu_frames:
-                # Use OpenCV CUDA if available, otherwise use CuPy interpolation
-                if self.cv2_cuda and hasattr(self.cv2_cuda, 'resize'):
-                    # Upload to GPU memory for OpenCV CUDA
-                    gpu_mat = self.cv2_cuda.GpuMat()
-                    gpu_mat.upload(self.cupy.asnumpy(gpu_frame))
-                    
-                    # Resize on GPU
-                    resized_gpu = self.cv2_cuda.resize(gpu_mat, target_size)
-                    
-                    # Download result
-                    result = resized_gpu.download()
-                    processed_frames.append(result)
-                else:
-                    # Fallback to CuPy-based resizing
-                    resized_frame = self._resize_frame_cupy(gpu_frame, target_size)
-                    processed_frames.append(self.cupy.asnumpy(resized_frame))
+            if self.cupy and self.capabilities.has_cuda:
+                # Use CuPy for CUDA
+                processed_frames = self._process_frames_cupy(frames, target_size)
+            elif self.torch and self.device:
+                # Use PyTorch for MPS or CUDA
+                processed_frames = self._process_frames_torch(frames, target_size)
+            else:
+                # Fallback to CPU
+                processed_frames = [cv2.resize(frame, target_size) for frame in frames]
             
         except Exception as e:
             logger.warning(f"GPU batch processing failed: {e}, falling back to CPU")
             # Fallback to CPU processing
             processed_frames = [cv2.resize(frame, target_size) for frame in frames]
+        
+        return processed_frames
+    
+    def _process_frames_torch(self, frames: List[np.ndarray], 
+                             target_size: Tuple[int, int]) -> List[np.ndarray]:
+        """Process frames using PyTorch tensors (MPS/CUDA)."""
+        processed_frames = []
+        
+        for frame in frames:
+            # Convert numpy array to PyTorch tensor
+            # OpenCV uses BGR, PyTorch expects RGB, but for resizing it doesn't matter
+            tensor = self.torch.from_numpy(frame).float()
+            
+            # Move to GPU device (MPS or CUDA)
+            tensor = tensor.to(self.device)
+            
+            # Reshape for interpolation: (H, W, C) -> (1, C, H, W)
+            if len(tensor.shape) == 3:
+                tensor = tensor.permute(2, 0, 1).unsqueeze(0)  # (C, H, W) -> (1, C, H, W)
+            else:
+                tensor = tensor.unsqueeze(0).unsqueeze(0)  # (H, W) -> (1, 1, H, W)
+            
+            # Resize using PyTorch interpolation
+            resized_tensor = self.torch.nn.functional.interpolate(
+                tensor, 
+                size=target_size[::-1],  # PyTorch expects (H, W), we have (W, H)
+                mode='bilinear', 
+                align_corners=False
+            )
+            
+            # Convert back to numpy: (1, C, H, W) -> (H, W, C)
+            if len(frame.shape) == 3:
+                resized_tensor = resized_tensor.squeeze(0).permute(1, 2, 0)
+            else:
+                resized_tensor = resized_tensor.squeeze(0).squeeze(0)
+            
+            # Move back to CPU and convert to numpy
+            resized_frame = resized_tensor.cpu().numpy().astype(np.uint8)
+            processed_frames.append(resized_frame)
+        
+        return processed_frames
+    
+    def _process_frames_cupy(self, frames: List[np.ndarray], 
+                            target_size: Tuple[int, int]) -> List[np.ndarray]:
+        """Process frames using CuPy (CUDA only)."""
+        processed_frames = []
+        
+        # Convert frames to GPU arrays
+        gpu_frames = []
+        for frame in frames:
+            gpu_frame = self.cupy.asarray(frame)
+            gpu_frames.append(gpu_frame)
+        
+        # Process each frame (resize operation)
+        for gpu_frame in gpu_frames:
+            # Use OpenCV CUDA if available, otherwise use CuPy interpolation
+            if self.cv2_cuda and hasattr(self.cv2_cuda, 'resize'):
+                # Upload to GPU memory for OpenCV CUDA
+                gpu_mat = self.cv2_cuda.GpuMat()
+                gpu_mat.upload(self.cupy.asnumpy(gpu_frame))
+                
+                # Resize on GPU
+                resized_gpu = self.cv2_cuda.resize(gpu_mat, target_size)
+                
+                # Download result
+                result = resized_gpu.download()
+                processed_frames.append(result)
+            else:
+                # Fallback to CuPy-based resizing
+                resized_frame = self._resize_frame_cupy(gpu_frame, target_size)
+                processed_frames.append(self.cupy.asnumpy(resized_frame))
         
         return processed_frames
     
