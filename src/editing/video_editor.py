@@ -79,6 +79,8 @@ class VideoEditor:
             video_clips = []
             total_duration = 0
             
+            # First pass: load all available clips
+            loaded_clips = []
             for i, clip in enumerate(clips):
                 print(f"   📹 Loading clip {i+1}/{len(clips)}: {os.path.basename(clip.file_path)}")
                 
@@ -89,26 +91,48 @@ class VideoEditor:
                 # Apply theme-specific effects
                 video_clip = self._apply_theme_effects(video_clip, theme)
                 
+                loaded_clips.append(video_clip)
+                total_duration += clip_duration
+            
+            print(f"   📊 Total available clip duration: {total_duration:.1f}s")
+            print(f"   🎯 Target duration: {target_duration}s")
+            
+            # If we don't have enough content, repeat clips to reach target duration
+            if total_duration < target_duration:
+                print(f"   🔄 Repeating clips to reach target duration...")
+                clips_needed = int(np.ceil(target_duration / total_duration))
+                extended_clips = loaded_clips * clips_needed
+            else:
+                extended_clips = loaded_clips
+            
+            # Add transitions and build final clip list
+            for i, video_clip in enumerate(extended_clips):
                 # Add transitions
                 if i > 0:  # Add fade in for all clips except first
                     video_clip = video_clip.fx(vfx.fadein, 0.5)
-                if i < len(clips) - 1:  # Add fade out for all clips except last
+                if i < len(extended_clips) - 1:  # Add fade out for all clips except last
                     video_clip = video_clip.fx(vfx.fadeout, 0.5)
                 
                 video_clips.append(video_clip)
-                total_duration += clip_duration
                 
-                # Stop if we've reached target duration
-                if total_duration >= target_duration:
+                # Check if we have enough duration
+                current_duration = sum(clip.duration for clip in video_clips)
+                if current_duration >= target_duration:
                     break
             
             # Concatenate all clips
             print(f"   🔗 Concatenating {len(video_clips)} clips...")
             final_video = concatenate_videoclips(video_clips, method="compose")
             
-            # Trim to target duration if necessary
+            # Trim to exact target duration
             if final_video.duration > target_duration:
+                print(f"   ✂️  Trimming from {final_video.duration:.1f}s to {target_duration}s")
                 final_video = final_video.subclip(0, target_duration)
+            
+            # Clean up loaded clips that weren't used
+            for clip in loaded_clips:
+                if clip not in video_clips:
+                    clip.close()
             
             # Add music overlay if provided
             if music_path and os.path.exists(music_path):

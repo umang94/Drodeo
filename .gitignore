@@ -52,6 +52,15 @@ input/*.mkv
 # Output files
 output/
 
+# Music files (downloaded content, licensing concerns)
+music/*.mp3
+music/*.wav
+music/*.m4a
+music/*.aac
+music/*.flac
+music/*.ogg
+music/*.mhtml
+
 # OS
 .DS_Store
 Thumbs.db
