@@ -6,6 +6,7 @@ python-dotenv==1.0.0
 tqdm==4.66.1
 requests==2.31.0
 scipy==1.11.3
+librosa==0.10.1
 
 # GPU acceleration dependencies (optional)
 cupy-cuda12x>=12.0.0; sys_platform != "darwin"
