@@ -48,6 +48,12 @@ input/*.mp4
 input/*.mov
 input/*.avi
 input/*.mkv
+input_dev/*.mp4
+input_dev/*.MP4
+input_dev/*.mov
+input_dev/*.avi
+input_dev/*.mkv
+test_audio_output.mp4
 
 # Output files
 output/
@@ -61,6 +67,12 @@ music/*.flac
 music/*.ogg
 music/*.mhtml
 music/music_index.json
+music_input/*.mp3
+music_input/*.wav
+music_input/*.m4a
+music_input/*.aac
+music_input/*.flac
+music_input/*.ogg
 
 # OS
 .DS_Store
