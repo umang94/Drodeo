@@ -1,17 +1,18 @@
 moviepy==1.0.3
 opencv-python==4.8.1.78
-numpy==1.24.3
+numpy>=1.24.0
 openai==1.101.0
 python-dotenv==1.0.0
 tqdm==4.66.1
 requests==2.31.0
-scipy==1.11.3
+scipy>=1.11.0
 librosa==0.10.1
 
 # GPU acceleration dependencies (optional)
+# CUDA support for Linux/Windows
 cupy-cuda12x>=12.0.0; sys_platform != "darwin"
 torch>=2.0.0; sys_platform != "darwin"
 opencv-contrib-python>=4.8.0; sys_platform != "darwin"
 
-# CPU fallback for macOS and systems without CUDA
-cupy-cpu>=12.0.0; sys_platform == "darwin"
+# macOS Apple Silicon support
+torch>=2.0.0; sys_platform == "darwin"
