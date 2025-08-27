@@ -12,8 +12,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import json
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (override existing ones)
+load_dotenv(override=True)
 
 class AIAnalyzer:
     """Handles OpenAI GPT-4 Vision integration for video analysis."""
@@ -271,23 +271,26 @@ Respond only with valid JSON format."""
         
         return theme_scores
 
-def analyze_video_with_ai(keyframes: List[np.ndarray], video_name: str = "") -> Optional[List[Dict]]:
+def analyze_video_with_ai(keyframes: List[np.ndarray], video_name: str = "", use_ai: bool = True) -> Optional[List[Dict]]:
     """Convenience function to analyze video keyframes with AI."""
+    if not use_ai:
+        print(f"   ⚠️  AI analysis disabled - skipping keyframe analysis")
+        return None
+        
     try:
         analyzer = AIAnalyzer()
         if analyzer.client is None:
-            print(f"   ⚠️  Skipping AI analysis - no OpenAI client available")
-            return None
+            raise ValueError("OpenAI client initialization failed - check API key")
         
         print(f"   🚀 Starting OpenAI API calls for {video_name}...")
         result = analyzer.analyze_keyframes_batch(keyframes, video_name)
         
         if result:
             print(f"   ✅ AI analysis completed successfully - {len(result)} frames analyzed")
+            return result
         else:
-            print(f"   ⚠️  AI analysis returned no results")
+            raise ValueError("AI analysis returned no results")
             
-        return result
     except Exception as e:
         print(f"   ❌ AI analysis failed: {e}")
-        return None
+        raise e  # Re-raise to fail fast

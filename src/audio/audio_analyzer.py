@@ -81,7 +81,7 @@ class AudioAnalyzer:
                 beat_times = [i * beat_interval for i in range(num_beats)]
                 beats = librosa.time_to_frames(beat_times, sr=sr, hop_length=self.hop_length)
             
-            print(f"      Tempo: {tempo:.1f} BPM, Beats detected: {len(beat_times)}")
+            print(f"      Tempo: {float(tempo):.1f} BPM, Beats detected: {len(beat_times)}")
             
             # Extract onset detection with error handling
             try:
@@ -295,6 +295,73 @@ class AudioAnalyzer:
         consistency = max(0.0, 1.0 - cv)
         
         return consistency
+    
+    def downsample_for_llm(self, audio_path: str, target_size_mb: float = 1.0) -> Optional[str]:
+        """
+        Downsample audio for LLM input (~1MB target)
+        
+        Args:
+            audio_path: Original audio file path
+            target_size_mb: Target file size in MB
+            
+        Returns:
+            Path to compressed audio file or None if failed
+        """
+        try:
+            print(f"   🔄 Downsampling audio for LLM input...")
+            
+            # Load audio with librosa
+            y, sr = librosa.load(audio_path, sr=22050)  # Downsample to 22kHz
+            
+            # Convert to mono if stereo
+            if len(y.shape) > 1:
+                y = librosa.to_mono(y)
+            
+            # Create temporary compressed file
+            import time
+            compressed_path = f"temp_compressed_audio_{int(time.time())}.wav"
+            
+            # Save compressed audio
+            try:
+                import soundfile as sf
+                sf.write(compressed_path, y, sr)
+            except ImportError:
+                # Fallback to scipy if soundfile not available
+                from scipy.io import wavfile
+                # Normalize to int16 range
+                y_int16 = (y * 32767).astype(np.int16)
+                wavfile.write(compressed_path, sr, y_int16)
+            
+            # Check file size
+            file_size_mb = os.path.getsize(compressed_path) / (1024 * 1024)
+            
+            print(f"      Compressed: {file_size_mb:.2f}MB (target: {target_size_mb}MB)")
+            
+            if file_size_mb <= target_size_mb * 1.5:  # Allow 50% tolerance
+                return compressed_path
+            else:
+                # Further compression needed - reduce sample rate more
+                print(f"      Further compression needed...")
+                y_reduced, sr_reduced = librosa.load(audio_path, sr=16000)
+                if len(y_reduced.shape) > 1:
+                    y_reduced = librosa.to_mono(y_reduced)
+                
+                try:
+                    import soundfile as sf
+                    sf.write(compressed_path, y_reduced, sr_reduced)
+                except ImportError:
+                    from scipy.io import wavfile
+                    y_int16 = (y_reduced * 32767).astype(np.int16)
+                    wavfile.write(compressed_path, sr_reduced, y_int16)
+                
+                file_size_mb = os.path.getsize(compressed_path) / (1024 * 1024)
+                print(f"      Further compressed: {file_size_mb:.2f}MB")
+                
+                return compressed_path
+                
+        except Exception as e:
+            logger.error(f"Audio downsampling failed: {e}")
+            return None
 
 def analyze_audio_for_video_sync(audio_path: str) -> Optional[AudioFeatures]:
     """

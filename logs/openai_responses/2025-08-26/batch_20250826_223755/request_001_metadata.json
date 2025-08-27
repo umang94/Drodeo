@@ -1,0 +1,30 @@
+{
+  "timestamp": "2025-08-26T22:38:17.963070",
+  "session_id": "batch_20250826_223755",
+  "request_id": "request_001",
+  "audio_file": "Fractite - Quicky-qPBvJ6E7RXY.mp3",
+  "video_file": "DJI_0131_dev.mp4",
+  "audio_duration": 79.12204081632653,
+  "audio_size_mb": 1.1269416809082031,
+  "keyframe_count": 14,
+  "keyframe_timestamps": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "model": "gpt-4o",
+  "prompt_tokens": null,
+  "max_tokens": 1500,
+  "processing_time_seconds": 18.635621070861816
+}

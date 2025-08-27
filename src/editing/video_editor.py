@@ -11,7 +11,7 @@ This module handles the actual video editing using MoviePy, including:
 
 import os
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 from moviepy.editor import VideoFileClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip, concatenate_audioclips, CompositeAudioClip
 from moviepy.video.fx import resize
@@ -49,14 +49,14 @@ class VideoEditor:
         os.makedirs(self.output_dir, exist_ok=True)
         
     def create_music_driven_video(self, clips: List[VideoClip], music_name: str, 
-                          target_duration: int = 180, music_path: Optional[str] = None) -> str:
+                          sync_plan: Optional[Any] = None, music_path: Optional[str] = None) -> str:
         """
-        Create a music-driven video from selected clips
+        Create a music-driven video from selected clips using sync plan
         
         Args:
             clips: List of video clips to include
             music_name: Name of the music track (for output filename)
-            target_duration: Target duration in seconds
+            sync_plan: AudioVisualSyncPlan for full-length beat-synchronized video
             music_path: Path to background music file
             
         Returns:
@@ -64,70 +64,27 @@ class VideoEditor:
         """
         if not clips:
             raise ValueError(f"No clips provided for music '{music_name}'")
-            
-        print(f"🎬 Creating music-driven video for: {music_name}")
-        print(f"   📊 Using {len(clips)} clips")
-        print(f"   ⏱️  Target duration: {target_duration}s")
+        
+        # Determine target duration from sync plan or use default
+        if sync_plan and hasattr(sync_plan, 'music_duration'):
+            target_duration = sync_plan.music_duration
+            print(f"🎬 Creating FULL-LENGTH music-driven video for: {music_name}")
+            print(f"   📊 Using {len(clips)} clips")
+            print(f"   🎵 Full music duration: {target_duration:.1f}s")
+            print(f"   🎯 Beat-synchronized transitions: {len(sync_plan.transition_points) if sync_plan.transition_points else 0}")
+        else:
+            target_duration = 180  # Fallback duration
+            print(f"🎬 Creating music-driven video for: {music_name}")
+            print(f"   📊 Using {len(clips)} clips")
+            print(f"   ⏱️  Fallback duration: {target_duration}s")
         
         try:
-            # Load and prepare video clips
-            video_clips = []
-            total_duration = 0
-            
-            # First pass: load all available clips
-            loaded_clips = []
-            for i, clip in enumerate(clips):
-                print(f"   📹 Loading clip {i+1}/{len(clips)}: {os.path.basename(clip.file_path)}")
-                
-                # Load video clip
-                video_clip = VideoFileClip(clip.file_path).subclip(clip.start_time, clip.end_time)
-                clip_duration = video_clip.duration
-                
-                # Apply basic video effects
-                video_clip = self._apply_video_effects(video_clip)
-                
-                loaded_clips.append(video_clip)
-                total_duration += clip_duration
-            
-            print(f"   📊 Total available clip duration: {total_duration:.1f}s")
-            print(f"   🎯 Target duration: {target_duration}s")
-            
-            # If we don't have enough content, repeat clips to reach target duration
-            if total_duration < target_duration:
-                print(f"   🔄 Repeating clips to reach target duration...")
-                clips_needed = int(np.ceil(target_duration / total_duration))
-                extended_clips = loaded_clips * clips_needed
+            if sync_plan and hasattr(sync_plan, 'transition_points'):
+                # Enhanced: Use sync plan for beat-precise video creation
+                final_video = self._create_sync_plan_video(clips, sync_plan, music_name)
             else:
-                extended_clips = loaded_clips
-            
-            # Add transitions and build final clip list
-            for i, video_clip in enumerate(extended_clips):
-                # Add transitions
-                if i > 0:  # Add fade in for all clips except first
-                    video_clip = video_clip.fx(vfx.fadein, 0.5)
-                if i < len(extended_clips) - 1:  # Add fade out for all clips except last
-                    video_clip = video_clip.fx(vfx.fadeout, 0.5)
-                
-                video_clips.append(video_clip)
-                
-                # Check if we have enough duration
-                current_duration = sum(clip.duration for clip in video_clips)
-                if current_duration >= target_duration:
-                    break
-            
-            # Concatenate all clips
-            print(f"   🔗 Concatenating {len(video_clips)} clips...")
-            final_video = concatenate_videoclips(video_clips, method="compose")
-            
-            # Trim to exact target duration
-            if final_video.duration > target_duration:
-                print(f"   ✂️  Trimming from {final_video.duration:.1f}s to {target_duration}s")
-                final_video = final_video.subclip(0, target_duration)
-            
-            # Clean up loaded clips that weren't used
-            for clip in loaded_clips:
-                if clip not in video_clips:
-                    clip.close()
+                # Fallback: Use original method
+                final_video = self._create_traditional_video(clips, target_duration)
             
             # Add music overlay if provided
             if music_path and os.path.exists(music_path):
@@ -145,8 +102,6 @@ class VideoEditor:
             
             # Clean up
             final_video.close()
-            for clip in video_clips:
-                clip.close()
             
             print(f"   ✅ Music-driven video created successfully!")
             return output_path
@@ -300,6 +255,154 @@ class VideoEditor:
         
         return output_paths
     
+    
+    def _create_sync_plan_video(self, clips: List[VideoClip], sync_plan: Any, music_name: str) -> VideoFileClip:
+        """
+        Create video using sync plan with beat-precise transitions
+        
+        Args:
+            clips: List of video clips
+            sync_plan: AudioVisualSyncPlan with transition points
+            music_name: Music name for logging
+            
+        Returns:
+            Final video clip
+        """
+        print(f"   🎯 Creating beat-synchronized video...")
+        
+        # Load all clips
+        loaded_clips = []
+        for i, clip in enumerate(clips):
+            print(f"      📹 Loading clip {i+1}/{len(clips)}: {os.path.basename(clip.file_path)}")
+            video_clip = VideoFileClip(clip.file_path).subclip(clip.start_time, clip.end_time)
+            video_clip = self._apply_video_effects(video_clip)
+            loaded_clips.append(video_clip)
+        
+        # Create segments based on transition points
+        transition_points = sync_plan.transition_points
+        target_duration = sync_plan.music_duration
+        
+        if not transition_points:
+            # Fallback to traditional method if no transitions
+            return self._create_traditional_video(clips, target_duration)
+        
+        # Add start and end points
+        all_points = [0.0] + sorted(transition_points) + [target_duration]
+        segments = []
+        
+        print(f"      🎵 Creating {len(all_points)-1} beat-aligned segments...")
+        
+        for i in range(len(all_points) - 1):
+            start_time = all_points[i]
+            end_time = all_points[i + 1]
+            segment_duration = end_time - start_time
+            
+            # Select clip for this segment (cycle through available clips)
+            clip_index = i % len(loaded_clips)
+            selected_clip = loaded_clips[clip_index]
+            
+            # Create segment of appropriate duration
+            if selected_clip.duration >= segment_duration:
+                # Clip is long enough, use a portion
+                segment = selected_clip.subclip(0, segment_duration)
+            else:
+                # Clip is too short, loop it
+                loops_needed = int(np.ceil(segment_duration / selected_clip.duration))
+                looped_clips = [selected_clip] * loops_needed
+                looped_video = concatenate_videoclips(looped_clips)
+                segment = looped_video.subclip(0, segment_duration)
+            
+            # Add beat-precise transitions
+            if i > 0:  # Fade in for all segments except first
+                segment = segment.fx(vfx.fadein, 0.3)
+            if i < len(all_points) - 2:  # Fade out for all segments except last
+                segment = segment.fx(vfx.fadeout, 0.3)
+            
+            segments.append(segment)
+        
+        # Concatenate all segments
+        print(f"      🔗 Concatenating {len(segments)} beat-aligned segments...")
+        final_video = concatenate_videoclips(segments, method="compose")
+        
+        # Clean up
+        for clip in loaded_clips:
+            clip.close()
+        
+        return final_video
+    
+    def _create_traditional_video(self, clips: List[VideoClip], target_duration: float) -> VideoFileClip:
+        """
+        Create video using traditional method (fallback)
+        
+        Args:
+            clips: List of video clips
+            target_duration: Target duration in seconds
+            
+        Returns:
+            Final video clip
+        """
+        print(f"   📹 Creating traditional video (fallback method)...")
+        
+        # Load and prepare video clips
+        video_clips = []
+        total_duration = 0
+        
+        # First pass: load all available clips
+        loaded_clips = []
+        for i, clip in enumerate(clips):
+            print(f"      📹 Loading clip {i+1}/{len(clips)}: {os.path.basename(clip.file_path)}")
+            
+            # Load video clip
+            video_clip = VideoFileClip(clip.file_path).subclip(clip.start_time, clip.end_time)
+            clip_duration = video_clip.duration
+            
+            # Apply basic video effects
+            video_clip = self._apply_video_effects(video_clip)
+            
+            loaded_clips.append(video_clip)
+            total_duration += clip_duration
+        
+        print(f"      📊 Total available clip duration: {total_duration:.1f}s")
+        print(f"      🎯 Target duration: {target_duration:.1f}s")
+        
+        # If we don't have enough content, repeat clips to reach target duration
+        if total_duration < target_duration:
+            print(f"      🔄 Repeating clips to reach target duration...")
+            clips_needed = int(np.ceil(target_duration / total_duration))
+            extended_clips = loaded_clips * clips_needed
+        else:
+            extended_clips = loaded_clips
+        
+        # Add transitions and build final clip list
+        for i, video_clip in enumerate(extended_clips):
+            # Add transitions
+            if i > 0:  # Add fade in for all clips except first
+                video_clip = video_clip.fx(vfx.fadein, 0.5)
+            if i < len(extended_clips) - 1:  # Add fade out for all clips except last
+                video_clip = video_clip.fx(vfx.fadeout, 0.5)
+            
+            video_clips.append(video_clip)
+            
+            # Check if we have enough duration
+            current_duration = sum(clip.duration for clip in video_clips)
+            if current_duration >= target_duration:
+                break
+        
+        # Concatenate all clips
+        print(f"      🔗 Concatenating {len(video_clips)} clips...")
+        final_video = concatenate_videoclips(video_clips, method="compose")
+        
+        # Trim to exact target duration
+        if final_video.duration > target_duration:
+            print(f"      ✂️  Trimming from {final_video.duration:.1f}s to {target_duration:.1f}s")
+            final_video = final_video.subclip(0, target_duration)
+        
+        # Clean up loaded clips that weren't used
+        for clip in loaded_clips:
+            if clip not in video_clips:
+                clip.close()
+        
+        return final_video
     
     def get_video_info(self, video_path: str) -> Dict:
         """

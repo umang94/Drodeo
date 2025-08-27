@@ -1,63 +1,99 @@
 """
 Batch Video Generator
 
-Creates one video for each music track using LLM-driven creative direction
-and all available video content.
+Creates one video for each music track using enhanced LLM-driven audio-visual
+analysis and full-length beat-synchronized video generation.
 """
 
 import os
 import sys
 import logging
+import argparse
 from pathlib import Path
 from typing import List, Dict, Any
 import json
 from dataclasses import asdict
+from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables (override existing ones)
+load_dotenv(override=True)
 
 # Add src to path for imports
 sys.path.append('src')
 
 from src.core.music_analyzer import MusicInputManager, AudioDrivenCreativeDirector
 from src.core.llm_video_analyzer import LLMVideoAnalyzer
-from src.utils.video_preprocessor import VideoPreprocessor
 from src.editing.video_editor import VideoEditor
 from src.core.video_processor import VideoProcessor
+from src.utils.llm_logger import LLMResponseLogger, create_session_logger
 
 logger = logging.getLogger(__name__)
 
 class BatchVideoGenerator:
-    """Generates videos for all music tracks using intelligent analysis."""
+    """Generates videos for all music tracks using enhanced audio-visual analysis."""
     
-    def __init__(self, use_dev_videos: bool = True):
+    def __init__(self, use_dev_videos: bool = True, enable_logging: bool = True, 
+                 use_cache: bool = True, enable_llm: bool = True):
         """Initialize batch video generator."""
         self.use_dev_videos = use_dev_videos
+        self.enable_logging = enable_logging
+        self.use_cache = use_cache
+        self.enable_llm = enable_llm
+        
+        # Initialize session logging
+        if self.enable_logging:
+            self.session_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            self.llm_logger = create_session_logger(self.session_id)
+            print(f"📝 Session logging enabled: {self.session_id}")
+        else:
+            self.llm_logger = None
+        
+        # Initialize components with logging
         self.music_manager = MusicInputManager()
-        self.video_analyzer = LLMVideoAnalyzer()
+        
+        # Initialize LLM analyzer only if enabled and API key available
+        if self.enable_llm and os.getenv('OPENAI_API_KEY'):
+            self.video_analyzer = LLMVideoAnalyzer(llm_logger=self.llm_logger)
+            llm_status = "✅"
+        else:
+            self.video_analyzer = None
+            llm_status = "❌ (No API key or disabled)"
+            if self.enable_llm:
+                print("⚠️  LLM analysis disabled: No OPENAI_API_KEY found")
+        
         self.creative_director = AudioDrivenCreativeDirector()
         self.video_processor = VideoProcessor()
         self.video_editor = VideoEditor()
         
-        print("🚀 Batch Video Generator initialized")
+        print("🚀 Enhanced Batch Video Generator initialized")
         print(f"   Using development videos: {use_dev_videos}")
+        print(f"   Cache enabled: {self.use_cache}")
+        print(f"   LLM analysis: {llm_status}")
+        print(f"   Full-length video generation: ✅")
     
-    def generate_all_videos(self, max_duration: int = 60) -> Dict[str, str]:
+    def generate_all_videos(self) -> Dict[str, str]:
         """
-        Generate videos for all music tracks.
+        Generate FULL-LENGTH videos for all music tracks using enhanced audio-visual analysis.
         
-        Args:
-            max_duration: Maximum video duration in seconds
-            
         Returns:
             Dictionary mapping music filename to output video path
         """
-        print("🎬 Starting batch video generation...")
+        print("🎬 Starting ENHANCED batch video generation...")
+        print("   🎵 Full-length videos (no duration limits)")
+        print("   🎯 Beat-synchronized transitions")
+        print(f"   🤖 LLM audio-visual analysis: {'✅' if self.video_analyzer else '❌'}")
+        print(f"   💾 Cache: {'✅' if self.use_cache else '❌ (disabled)'}")
         
-        # Step 1: Scan and analyze music
-        print("\n📊 Step 1: Analyzing music tracks...")
+        # Step 1: Scan music tracks
+        print("\n📊 Step 1: Scanning music tracks...")
         music_tracks = self.music_manager.scan_music_folder()
         
         if not music_tracks:
-            print("❌ No music tracks found in music_input/ folder")
+            print("❌ No music tracks found in music/ folder")
             return {}
+        
+        print(f"   Found {len(music_tracks)} music tracks")
         
         # Step 2: Get available videos
         print(f"\n📹 Step 2: Scanning video files...")
@@ -66,49 +102,91 @@ class BatchVideoGenerator:
         
         if not video_files:
             print(f"❌ No video files found in {video_dir}/ folder")
+            print(f"   Make sure downsampled videos exist in input_dev/ directory")
             return {}
         
-        print(f"   Found {len(video_files)} video files")
+        print(f"   Found {len(video_files)} video files ({'downsampled' if self.use_dev_videos else 'full resolution'})")
         
-        # Step 3: Analyze videos (simplified for now without LLM)
-        print(f"\n🎯 Step 3: Processing video content...")
-        video_analyses = self._analyze_videos_simple(video_files)
+        # Verify we're using downsampled versions
+        for video_file in video_files[:3]:  # Check first few files
+            file_size_mb = os.path.getsize(video_file) / (1024 * 1024)
+            print(f"   📹 {Path(video_file).name}: {file_size_mb:.1f}MB")
         
-        # Step 4: Generate videos for each music track
-        print(f"\n🎵 Step 4: Creating videos for each music track...")
+        # Step 3: Generate videos for each music track
+        print(f"\n🎵 Step 3: Creating full-length videos...")
         generated_videos = {}
         
         for i, music_track in enumerate(music_tracks, 1):
             print(f"\n[{i}/{len(music_tracks)}] Processing: {music_track.filename}")
             
             try:
-                # Create video plan
-                video_plan = self.creative_director.create_video_plan(music_track, video_analyses)
-                
-                # Generate video
-                output_path = self._create_video_from_plan(music_track, video_plan, video_files, max_duration)
+                # Enhanced: Use unified audio-visual analysis
+                output_path = self._create_enhanced_video(music_track, video_files)
                 
                 if output_path:
                     generated_videos[music_track.filename] = output_path
-                    print(f"   ✅ Video created: {Path(output_path).name}")
+                    print(f"   ✅ Full-length video created: {Path(output_path).name}")
+                    
+                    # Log video generation result
+                    if self.llm_logger:
+                        self.llm_logger.log_video_generation_result(
+                            music_track.filename, output_path, None, success=True
+                        )
                 else:
                     print(f"   ❌ Failed to create video for {music_track.filename}")
+                    
+                    # Log failure
+                    if self.llm_logger:
+                        self.llm_logger.log_video_generation_result(
+                            music_track.filename, "", None, success=False, 
+                            error_message="Video creation failed"
+                        )
                     
             except Exception as e:
                 logger.error(f"Error creating video for {music_track.filename}: {e}")
                 print(f"   ❌ Error: {e}")
+                
+                # Log error
+                if self.llm_logger:
+                    self.llm_logger.log_video_generation_result(
+                        music_track.filename, "", None, success=False, 
+                        error_message=str(e)
+                    )
+        
+        # Step 4: Generate session report
+        if self.llm_logger:
+            try:
+                report_path = self.llm_logger.create_analysis_report(self.session_id)
+                print(f"\n📋 LLM analysis report generated: {report_path}")
+            except Exception as e:
+                logger.warning(f"Failed to generate analysis report: {e}")
         
         # Step 5: Summary
-        print(f"\n🎉 Batch generation complete!")
+        print(f"\n🎉 Enhanced batch generation complete!")
         print(f"   Music tracks processed: {len(music_tracks)}")
-        print(f"   Videos created: {len(generated_videos)}")
+        print(f"   Full-length videos created: {len(generated_videos)}")
         
         if generated_videos:
-            print(f"\n📊 Generated Videos:")
+            print(f"\n📊 Generated Full-Length Videos:")
+            total_duration = 0
             for music_file, video_path in generated_videos.items():
                 file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
-                print(f"   🎵 {music_file}")
-                print(f"      → {Path(video_path).name} ({file_size_mb:.1f}MB)")
+                
+                # Get video duration
+                try:
+                    from moviepy.editor import VideoFileClip
+                    clip = VideoFileClip(video_path)
+                    duration = clip.duration
+                    total_duration += duration
+                    clip.close()
+                    
+                    print(f"   🎵 {music_file}")
+                    print(f"      → {Path(video_path).name} ({duration:.1f}s, {file_size_mb:.1f}MB)")
+                except:
+                    print(f"   🎵 {music_file}")
+                    print(f"      → {Path(video_path).name} ({file_size_mb:.1f}MB)")
+            
+            print(f"\n📈 Total video content: {total_duration:.1f}s ({total_duration/60:.1f} minutes)")
         
         return generated_videos
     
@@ -182,21 +260,43 @@ class BatchVideoGenerator:
         else:
             return ['happy', 'cinematic']
     
-    def _create_video_from_plan(self, music_track, video_plan: Dict[str, Any], 
-                               video_files: List[str], max_duration: int) -> str:
-        """Create video from the generated plan."""
+    def _create_enhanced_video(self, music_track, video_files: List[str]) -> str:
+        """Create enhanced full-length video using audio-visual analysis."""
         try:
-            # Use existing video processing pipeline
-            print(f"   🎬 Creating video with {len(video_files)} source videos...")
+            cache_status = "enabled" if self.use_cache else "disabled"
+            print(f"   🎵🎬 Starting enhanced audio-visual analysis (cache {cache_status})...")
             
-            # Process videos to get clips
+            # Step 1: Perform unified audio-visual analysis (if LLM available)
+            sync_plan = None
+            if self.video_analyzer:
+                sync_plan = self.video_analyzer.analyze_audio_visual_unified(
+                    audio_path=music_track.file_path,
+                    video_paths=video_files,
+                    use_dev_versions=self.use_dev_videos
+                )
+                
+                if sync_plan:
+                    print(f"   ✅ Sync plan generated:")
+                    print(f"      Duration: {sync_plan.music_duration:.1f}s")
+                    print(f"      Transitions: {len(sync_plan.transition_points)}")
+                    print(f"      Confidence: {sync_plan.sync_confidence:.2f}")
+                else:
+                    print(f"   ⚠️  LLM audio-visual analysis failed, using fallback method...")
+            else:
+                print(f"   ⚠️  LLM analysis not available, using fallback method...")
+            
+            # Step 2: Process videos to get clips
+            cache_msg = "cached" if self.use_cache else "fresh analysis"
+            print(f"   📹 Processing video clips ({cache_msg})...")
             all_clips = []
             
             for video_file in video_files[:6]:  # Use up to 6 videos
                 try:
-                    clips, keyframes = self.video_processor.process_video(video_file, use_cache=True)
+                    clips, keyframes = self.video_processor.process_video(
+                        video_file, use_cache=self.use_cache, use_ai=self.enable_llm
+                    )
                     all_clips.extend(clips[:3])  # Use up to 3 clips per video
-                    print(f"      📹 {Path(video_file).name}: {len(clips)} clips")
+                    print(f"      📹 {Path(video_file).name}: {len(clips)} clips ({cache_msg})")
                 except Exception as e:
                     logger.warning(f"Failed to process {video_file}: {e}")
             
@@ -206,29 +306,63 @@ class BatchVideoGenerator:
             
             print(f"      📊 Total clips available: {len(all_clips)}")
             
-            # Create themed video using existing editor
-            target_duration = min(video_plan['target_duration'], max_duration)
-            
-            # Determine theme based on music
-            primary_theme = music_track.suitable_themes[0] if music_track.suitable_themes else 'happy'
-            
-            # Create output filename
+            # Step 3: Create full-length video using sync plan
             music_stem = Path(music_track.filename).stem
-            output_filename = f"{music_stem}_{primary_theme}_{len(all_clips)}clips_{target_duration}s.mp4"
-            output_path = os.path.join("output", output_filename)
             
-            # Use the video editor to create the final video
             final_video = self.video_editor.create_music_driven_video(
                 clips=all_clips,
                 music_name=music_stem,
-                target_duration=target_duration,
+                sync_plan=sync_plan,  # Use sync plan for full-length generation
                 music_path=music_track.file_path
             )
             
             return final_video
             
         except Exception as e:
-            logger.error(f"Error creating video from plan: {e}")
+            logger.error(f"Error creating enhanced video: {e}")
+            print(f"   ⚠️  Enhanced creation failed, trying fallback...")
+            return self._create_fallback_video(music_track, video_files)
+    
+    def _create_fallback_video(self, music_track, video_files: List[str]) -> str:
+        """Create video using fallback method (traditional approach)."""
+        try:
+            cache_status = "enabled" if self.use_cache else "disabled"
+            print(f"   📹 Creating fallback video (cache {cache_status})...")
+            
+            # Process videos to get clips
+            all_clips = []
+            cache_msg = "cached" if self.use_cache else "fresh analysis"
+            
+            for video_file in video_files[:6]:  # Use up to 6 videos
+                try:
+                    clips, keyframes = self.video_processor.process_video(
+                        video_file, use_cache=self.use_cache, use_ai=self.enable_llm
+                    )
+                    all_clips.extend(clips[:3])  # Use up to 3 clips per video
+                    print(f"      📹 {Path(video_file).name}: {len(clips)} clips ({cache_msg})")
+                except Exception as e:
+                    logger.warning(f"Failed to process {video_file}: {e}")
+            
+            if not all_clips:
+                print(f"      ❌ No clips extracted from videos")
+                return None
+            
+            print(f"      📊 Total clips available: {len(all_clips)}")
+            
+            # Create video using traditional method (no sync plan)
+            music_stem = Path(music_track.filename).stem
+            
+            final_video = self.video_editor.create_music_driven_video(
+                clips=all_clips,
+                music_name=music_stem,
+                sync_plan=None,  # No sync plan - will use fallback method
+                music_path=music_track.file_path
+            )
+            
+            return final_video
+            
+        except Exception as e:
+            logger.error(f"Error creating fallback video: {e}")
             return None
     
     def save_generation_report(self, generated_videos: Dict[str, str], 
@@ -266,27 +400,49 @@ class BatchVideoGenerator:
             logger.error(f"Failed to save generation report: {e}")
 
 def main():
-    """Main function to run batch video generation."""
-    print("🎬 Drodeo Batch Video Generator")
+    """Main function to run enhanced batch video generation."""
+    parser = argparse.ArgumentParser(description='Enhanced Drodeo Batch Video Generator')
+    parser.add_argument('--no-cache', action='store_true', 
+                       help='Disable video processing cache (force fresh analysis)')
+    parser.add_argument('--use-full-res', action='store_true',
+                       help='Use full resolution videos instead of downsampled versions')
+    parser.add_argument('--no-logging', action='store_true',
+                       help='Disable session logging')
+    
+    args = parser.parse_args()
+    
+    print("🎬 Enhanced Drodeo Batch Video Generator")
     print("=" * 50)
+    print("🎵 Full-length beat-synchronized videos")
+    print("🤖 AI-powered audio-visual analysis (required)")
+    print("📝 Comprehensive logging and reporting")
+    print(f"📹 Using {'full resolution' if args.use_full_res else 'downsampled'} videos by default")
     
-    # Initialize generator
-    generator = BatchVideoGenerator(use_dev_videos=True)
+    # Initialize enhanced generator with command line options
+    generator = BatchVideoGenerator(
+        use_dev_videos=not args.use_full_res,  # Default to downsampled
+        enable_logging=not args.no_logging,
+        use_cache=not args.no_cache,
+        enable_llm=True  # Always use AI
+    )
     
-    # Generate all videos
-    generated_videos = generator.generate_all_videos(max_duration=60)
+    # Generate all full-length videos (no duration limits)
+    generated_videos = generator.generate_all_videos()
     
     # Save report
     if generated_videos:
         generator.save_generation_report(generated_videos)
         
-        print(f"\n✅ Batch generation successful!")
-        print(f"   Check the output/ folder for your videos")
+        print(f"\n✅ Enhanced batch generation successful!")
+        print(f"   Check the output/ folder for your full-length videos")
+        if not args.no_logging:
+            print(f"   Check the logs/openai_responses/ folder for analysis logs")
     else:
         print(f"\n❌ No videos were generated")
         print(f"   Check that you have:")
-        print(f"   - Music files in music_input/ folder")
-        print(f"   - Video files in input/ or input_dev/ folder")
+        print(f"   - Music files in music/ folder")
+        print(f"   - Video files in input_dev/ folder (or input/ with --use-full-res)")
+        print(f"   - Valid OpenAI API key in environment")
 
 if __name__ == "__main__":
     main()
