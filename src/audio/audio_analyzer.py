@@ -68,29 +68,52 @@ class AudioAnalyzer:
             
             print(f"      Duration: {duration:.1f}s, Sample rate: {sr}Hz")
             
-            # Extract tempo and beats
-            tempo, beats = librosa.beat.beat_track(y=y, sr=sr, hop_length=self.hop_length)
-            beat_times = librosa.frames_to_time(beats, sr=sr, hop_length=self.hop_length)
+            # Extract tempo and beats with error handling
+            try:
+                tempo, beats = librosa.beat.beat_track(y=y, sr=sr, hop_length=self.hop_length)
+                beat_times = librosa.frames_to_time(beats, sr=sr, hop_length=self.hop_length)
+            except Exception as e:
+                print(f"      ⚠️  Beat detection failed, using fallback: {e}")
+                # Fallback: estimate tempo and create artificial beats
+                tempo = 120.0  # Default tempo
+                beat_interval = 60.0 / tempo
+                num_beats = int(duration / beat_interval)
+                beat_times = [i * beat_interval for i in range(num_beats)]
+                beats = librosa.time_to_frames(beat_times, sr=sr, hop_length=self.hop_length)
             
             print(f"      Tempo: {tempo:.1f} BPM, Beats detected: {len(beat_times)}")
             
-            # Extract onset detection
-            onset_frames = librosa.onset.onset_detect(y=y, sr=sr, hop_length=self.hop_length)
-            onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=self.hop_length)
+            # Extract onset detection with error handling
+            try:
+                onset_frames = librosa.onset.onset_detect(y=y, sr=sr, hop_length=self.hop_length)
+                onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=self.hop_length)
+            except Exception as e:
+                print(f"      ⚠️  Onset detection failed, using fallback: {e}")
+                # Fallback: create artificial onsets
+                onset_times = beat_times  # Use beat times as onsets
+                onset_frames = beats
             
-            # Extract spectral features
-            spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=self.hop_length)[0]
-            zero_crossing_rate = librosa.feature.zero_crossing_rate(y, hop_length=self.hop_length)[0]
-            mfcc = librosa.feature.mfcc(y=y, sr=sr, hop_length=self.hop_length, n_mfcc=13)
+            # Extract spectral features with error handling
+            try:
+                spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=self.hop_length)[0]
+                zero_crossing_rate = librosa.feature.zero_crossing_rate(y, hop_length=self.hop_length)[0]
+                mfcc = librosa.feature.mfcc(y=y, sr=sr, hop_length=self.hop_length, n_mfcc=13)
+            except Exception as e:
+                print(f"      ⚠️  Spectral analysis failed, using fallback: {e}")
+                # Fallback: create dummy features
+                num_frames = len(y) // self.hop_length
+                spectral_centroid = np.full(num_frames, 2000.0)  # Default centroid
+                zero_crossing_rate = np.full(num_frames, 0.1)   # Default ZCR
+                mfcc = np.zeros((13, num_frames))                # Zero MFCC
             
             # Calculate energy profile
             energy_profile = self._calculate_energy_profile(y, sr)
             
             features = AudioFeatures(
                 tempo=float(tempo),
-                beats=beat_times.tolist(),
-                onset_frames=onset_frames.tolist(),
-                onset_times=onset_times.tolist(),
+                beats=beat_times.tolist() if hasattr(beat_times, 'tolist') else list(beat_times),
+                onset_frames=onset_frames.tolist() if hasattr(onset_frames, 'tolist') else list(onset_frames),
+                onset_times=onset_times.tolist() if hasattr(onset_times, 'tolist') else list(onset_times),
                 spectral_centroid=spectral_centroid,
                 zero_crossing_rate=zero_crossing_rate,
                 mfcc=mfcc,

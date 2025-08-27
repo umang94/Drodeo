@@ -21,9 +21,8 @@ import moviepy.video.fx.all as vfx
 import numpy as np
 from tqdm import tqdm
 
-from src.utils.config import THEME_CONFIGS, VIDEO_CONFIG
+from src.utils.config import VIDEO_CONFIG
 from src.core.video_processor import VideoClip
-from src.editing.music_downloader import MusicDownloader
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -42,25 +41,21 @@ class VideoEditor:
         self.output_dir = output_dir
         self.ensure_output_directory()
         
-        # Initialize music downloader
-        try:
-            self.music_downloader = MusicDownloader()
-        except Exception as e:
-            logger.warning(f"Failed to initialize music downloader: {e}")
-            self.music_downloader = None
+        # Music-driven approach - no automatic music downloader needed
+        self.music_downloader = None
         
     def ensure_output_directory(self):
         """Create output directory if it doesn't exist"""
         os.makedirs(self.output_dir, exist_ok=True)
         
-    def create_themed_video(self, clips: List[VideoClip], theme: str, 
+    def create_music_driven_video(self, clips: List[VideoClip], music_name: str, 
                           target_duration: int = 180, music_path: Optional[str] = None) -> str:
         """
-        Create a themed video from selected clips
+        Create a music-driven video from selected clips
         
         Args:
             clips: List of video clips to include
-            theme: Theme name (happy, exciting, peaceful, adventure, cinematic)
+            music_name: Name of the music track (for output filename)
             target_duration: Target duration in seconds
             music_path: Path to background music file
             
@@ -68,9 +63,9 @@ class VideoEditor:
             Path to the rendered video file
         """
         if not clips:
-            raise ValueError(f"No clips provided for theme '{theme}'")
+            raise ValueError(f"No clips provided for music '{music_name}'")
             
-        print(f"🎬 Creating {theme} themed video...")
+        print(f"🎬 Creating music-driven video for: {music_name}")
         print(f"   📊 Using {len(clips)} clips")
         print(f"   ⏱️  Target duration: {target_duration}s")
         
@@ -88,8 +83,8 @@ class VideoEditor:
                 video_clip = VideoFileClip(clip.file_path).subclip(clip.start_time, clip.end_time)
                 clip_duration = video_clip.duration
                 
-                # Apply theme-specific effects
-                video_clip = self._apply_theme_effects(video_clip, theme)
+                # Apply basic video effects
+                video_clip = self._apply_video_effects(video_clip)
                 
                 loaded_clips.append(video_clip)
                 total_duration += clip_duration
@@ -140,50 +135,38 @@ class VideoEditor:
                 final_video = self._add_music_overlay(final_video, music_path)
             
             # Generate output filename
-            output_filename = f"{theme}_video_{len(clips)}clips_{int(final_video.duration)}s.mp4"
+            safe_music_name = "".join(c for c in music_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            output_filename = f"{safe_music_name}_{len(clips)}clips_{int(final_video.duration)}s.mp4"
             output_path = os.path.join(self.output_dir, output_filename)
             
             # Render the final video
             print(f"   🎬 Rendering to: {output_filename}")
-            self._render_video(final_video, output_path, theme)
+            self._render_video(final_video, output_path, music_name)
             
             # Clean up
             final_video.close()
             for clip in video_clips:
                 clip.close()
             
-            print(f"   ✅ {theme} video created successfully!")
+            print(f"   ✅ Music-driven video created successfully!")
             return output_path
             
         except Exception as e:
-            logger.error(f"Error creating {theme} themed video: {str(e)}")
+            logger.error(f"Error creating music-driven video for {music_name}: {str(e)}")
             raise
     
-    def _apply_theme_effects(self, clip: VideoFileClip, theme: str) -> VideoFileClip:
+    def _apply_video_effects(self, clip: VideoFileClip) -> VideoFileClip:
         """
-        Apply theme-specific visual effects to a clip
+        Apply basic video effects to a clip
         
         Args:
             clip: Video clip to modify
-            theme: Theme name
             
         Returns:
             Modified video clip
         """
-        # Apply theme-specific effects based on configuration
-        if theme == "exciting":
-            # Slightly increase saturation and contrast for exciting theme
-            # Note: MoviePy doesn't have built-in color correction, so we keep it simple
-            pass
-        elif theme == "peaceful":
-            # Softer transitions and potentially slower pacing
-            pass
-        elif theme == "cinematic":
-            # Add letterbox effect for cinematic feel
-            if clip.h > clip.w * 9/16:  # If taller than 16:9
-                target_height = int(clip.w * 9/16)
-                clip = clip.crop(y1=(clip.h - target_height)//2, y2=(clip.h + target_height)//2)
-        
+        # Apply basic video enhancements
+        # Keep aspect ratio and basic quality improvements
         return clip
     
     def _add_music_overlay(self, video: VideoFileClip, music_path: str) -> VideoFileClip:
@@ -235,14 +218,14 @@ class VideoEditor:
             logger.warning(f"Failed to add music overlay: {str(e)}")
             return video  # Return original video if music fails
     
-    def _render_video(self, video: VideoFileClip, output_path: str, theme: str):
+    def _render_video(self, video: VideoFileClip, output_path: str, music_name: str):
         """
         Render video to file with progress tracking
         
         Args:
             video: Video to render
             output_path: Output file path
-            theme: Theme name for progress display
+            music_name: Music name for progress display
         """
         # Get video properties
         duration = video.duration
@@ -277,82 +260,46 @@ class VideoEditor:
             logger.error(f"Rendering failed: {str(e)}")
             raise
     
-    def create_multiple_themed_videos(self, theme_clips: Dict[str, List[VideoClip]], 
-                                    target_duration: int = 180) -> Dict[str, str]:
+    def create_music_driven_videos(self, music_clips: Dict[str, List[VideoClip]], 
+                                 music_paths: Dict[str, str],
+                                 target_duration: int = 180) -> Dict[str, str]:
         """
-        Create multiple themed videos from clip assignments
+        Create multiple music-driven videos from clip assignments
         
         Args:
-            theme_clips: Dictionary mapping theme names to clip lists
+            music_clips: Dictionary mapping music names to clip lists
+            music_paths: Dictionary mapping music names to file paths
             target_duration: Target duration for each video
             
         Returns:
-            Dictionary mapping theme names to output file paths
+            Dictionary mapping music names to output file paths
         """
         output_paths = {}
         
-        print(f"\n🎬 Creating themed videos...")
-        print(f"📊 Themes to process: {len(theme_clips)}")
+        print(f"\n🎬 Creating music-driven videos...")
+        print(f"📊 Music tracks to process: {len(music_clips)}")
         
-        for theme, clips in theme_clips.items():
+        for music_name, clips in music_clips.items():
             if not clips:
-                print(f"⚠️  Skipping {theme} - no clips assigned")
+                print(f"⚠️  Skipping {music_name} - no clips assigned")
                 continue
                 
             try:
-                # Look for theme music
-                music_path = self._find_theme_music(theme, target_duration)
+                # Get music file path
+                music_path = music_paths.get(music_name)
                 
-                # Create themed video
-                output_path = self.create_themed_video(
-                    clips, theme, target_duration, music_path
+                # Create music-driven video
+                output_path = self.create_music_driven_video(
+                    clips, music_name, target_duration, music_path
                 )
-                output_paths[theme] = output_path
+                output_paths[music_name] = output_path
                 
             except Exception as e:
-                logger.error(f"Failed to create {theme} video: {str(e)}")
+                logger.error(f"Failed to create video for {music_name}: {str(e)}")
                 continue
         
         return output_paths
     
-    def _find_theme_music(self, theme: str, target_duration: int = 180) -> Optional[str]:
-        """
-        Find or download music file for a theme
-        
-        Args:
-            theme: Theme name
-            target_duration: Target duration in seconds
-            
-        Returns:
-            Path to music file or None if not found
-        """
-        if self.music_downloader:
-            try:
-                return self.music_downloader.get_theme_music(theme, target_duration)
-            except Exception as e:
-                logger.warning(f"Music downloader failed for {theme}: {e}")
-        
-        # Fallback to manual search
-        music_dir = "music"
-        if not os.path.exists(music_dir):
-            return None
-            
-        # Look for theme-specific music files
-        possible_names = [
-            f"{theme}.mp3",
-            f"{theme}.wav",
-            f"{theme}.m4a",
-            f"{theme}_music.mp3",
-            f"{theme}_background.mp3",
-            f"{theme}_sample.wav"
-        ]
-        
-        for name in possible_names:
-            path = os.path.join(music_dir, name)
-            if os.path.exists(path):
-                return path
-                
-        return None
     
     def get_video_info(self, video_path: str) -> Dict:
         """
@@ -397,7 +344,7 @@ def main():
     ]
     
     try:
-        output_path = editor.create_themed_video(test_clips, "peaceful", 10)
+        output_path = editor.create_music_driven_video(test_clips, "test_music", 10, None)
         print(f"Test video created: {output_path}")
     except Exception as e:
         print(f"Test failed: {e}")
