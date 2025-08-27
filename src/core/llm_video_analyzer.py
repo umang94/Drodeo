@@ -430,7 +430,7 @@ Please provide specific timestamps and actionable editing insights. Focus on how
         return sorted(timestamps)
     
     def analyze_audio_visual_unified(self, audio_path: str, video_paths: List[str], 
-                                   use_dev_versions: bool = True) -> Optional[AudioVisualSyncPlan]:
+                                   use_dev_versions: bool = True, use_cache: bool = True) -> Optional[AudioVisualSyncPlan]:
         """
         Enhanced unified audio-visual analysis using GPT-4o with full audio + strategic keyframes
         
@@ -438,6 +438,7 @@ Please provide specific timestamps and actionable editing insights. Focus on how
             audio_path: Path to music file
             video_paths: List of video file paths
             use_dev_versions: Use development versions for faster processing
+            use_cache: Whether to use keyframe caching
             
         Returns:
             AudioVisualSyncPlan object or None if analysis fails
@@ -470,7 +471,7 @@ Please provide specific timestamps and actionable editing insights. Focus on how
             # Step 3: Extract strategic keyframes from videos
             print(f"   📸 Extracting strategic keyframes...")
             keyframes_data, keyframe_timestamps = self._extract_strategic_keyframes(
-                video_paths, audio_features, use_dev_versions
+                video_paths, audio_features, use_dev_versions, use_cache=use_cache
             )
             if not keyframes_data:
                 print(f"   ❌ Keyframe extraction failed")
@@ -565,32 +566,31 @@ Please provide specific timestamps and actionable editing insights. Focus on how
             return None
     
     def _extract_strategic_keyframes(self, video_paths: List[str], audio_features: AudioFeatures,
-                                   use_dev_versions: bool = True, target_frames: int = 25) -> tuple:
+                                   use_dev_versions: bool = True, target_frames: int = None, 
+                                   use_cache: bool = True) -> tuple:
         """
         Extract strategic keyframes aligned with beats and energy peaks
+        Dynamic keyframe count: 1 frame every 2 seconds of video duration
         
         Args:
             video_paths: List of video file paths
             audio_features: Audio analysis results
             use_dev_versions: Use development versions
-            target_frames: Target number of keyframes to extract
+            target_frames: Ignored - calculated dynamically based on video duration
+            use_cache: Whether to use keyframe caching
             
         Returns:
             Tuple of (keyframes_data, keyframe_timestamps)
         """
         try:
+            from src.utils.cache_manager import CacheManager
+            import cv2
+            
             all_keyframes = []
             all_timestamps = []
+            cache_manager = CacheManager() if use_cache else None
             
-            # Calculate strategic timestamps based on audio features
-            strategic_times = self._calculate_strategic_timestamps(
-                audio_features, target_frames
-            )
-            
-            print(f"      Strategic timestamps: {len(strategic_times)} points")
-            
-            # Extract keyframes from each video at strategic times
-            frames_per_video = max(1, target_frames // len(video_paths))
+            print(f"      Using dynamic keyframe calculation (1 frame per 2 seconds)")
             
             for video_path in video_paths:
                 # Determine which video file to use
@@ -600,36 +600,85 @@ Please provide specific timestamps and actionable editing insights. Focus on how
                 else:
                     analysis_path = video_path
                 
+                # Get video duration to calculate dynamic keyframe count
                 try:
                     clip = VideoFileClip(analysis_path)
                     video_duration = clip.duration
-                    
-                    # Select strategic times that fit within this video's duration
-                    valid_times = [t for t in strategic_times if t < video_duration][:frames_per_video]
-                    
-                    for time_point in valid_times:
+                    clip.close()
+                except Exception as e:
+                    logger.warning(f"Failed to get duration for {Path(analysis_path).name}: {e}")
+                    continue
+                
+                # Calculate dynamic keyframe count: 1 frame every 2 seconds
+                frames_per_video = max(1, int(video_duration / 2))
+                print(f"      {Path(analysis_path).name}: {video_duration:.1f}s → {frames_per_video} frames")
+                
+                # Try to load keyframes from cache first
+                cached_keyframes = None
+                if cache_manager and use_cache:
+                    if cache_manager.has_keyframes_cache(analysis_path, frames_per_video):
+                        cached_keyframes = cache_manager.get_cached_keyframes(analysis_path, frames_per_video)
+                        print(f"      ✅ Using cached keyframes for {Path(analysis_path).name}")
+                
+                if cached_keyframes:
+                    # Use cached keyframes - convert to base64
+                    for i, frame in enumerate(cached_keyframes):
                         try:
-                            # Extract frame
-                            frame = clip.get_frame(time_point)
-                            
-                            # Convert to base64
-                            import cv2
-                            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                            _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                            # Convert cached frame to base64
+                            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                             frame_base64 = base64.b64encode(buffer).decode('utf-8')
                             
                             all_keyframes.append(frame_base64)
-                            all_timestamps.append(time_point)
+                            # Use evenly distributed timestamps for cached frames
+                            timestamp = i * (audio_features.duration / len(cached_keyframes))
+                            all_timestamps.append(timestamp)
                             
                         except Exception as e:
-                            logger.warning(f"Failed to extract frame at {time_point}s from {Path(analysis_path).name}: {e}")
+                            logger.warning(f"Failed to process cached frame {i} from {Path(analysis_path).name}: {e}")
                             continue
-                    
-                    clip.close()
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to process video {Path(video_path).name}: {e}")
-                    continue
+                else:
+                    # Extract keyframes fresh and cache them
+                    print(f"      🔄 Extracting fresh keyframes for {Path(analysis_path).name}")
+                    try:
+                        clip = VideoFileClip(analysis_path)
+                        video_duration = clip.duration
+                        
+                        # Calculate evenly distributed timestamps for this video
+                        frame_times = [i * video_duration / frames_per_video for i in range(frames_per_video)]
+                        
+                        # Store frames for caching
+                        frames_to_cache = []
+                        
+                        for time_point in frame_times:
+                            try:
+                                # Extract frame
+                                frame = clip.get_frame(time_point)
+                                
+                                # Convert to base64 for LLM
+                                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                                _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                                frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                                
+                                all_keyframes.append(frame_base64)
+                                all_timestamps.append(time_point)
+                                
+                                # Store frame for caching (BGR format for cv2.imwrite)
+                                frames_to_cache.append(frame_bgr)
+                                
+                            except Exception as e:
+                                logger.warning(f"Failed to extract frame at {time_point}s from {Path(analysis_path).name}: {e}")
+                                continue
+                        
+                        clip.close()
+                        
+                        # Cache the extracted keyframes
+                        if cache_manager and frames_to_cache:
+                            cache_manager.cache_keyframes(analysis_path, frames_to_cache, len(frames_to_cache))
+                            print(f"      💾 Cached {len(frames_to_cache)} keyframes for {Path(analysis_path).name}")
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to process video {Path(video_path).name}: {e}")
+                        continue
             
             print(f"      Extracted {len(all_keyframes)} strategic keyframes")
             

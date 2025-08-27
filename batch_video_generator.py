@@ -34,12 +34,13 @@ class BatchVideoGenerator:
     """Generates videos for all music tracks using enhanced audio-visual analysis."""
     
     def __init__(self, use_dev_videos: bool = True, enable_logging: bool = True, 
-                 use_cache: bool = True, enable_llm: bool = True):
+                 use_cache: bool = True, enable_llm: bool = True, fast_test: bool = False):
         """Initialize batch video generator."""
         self.use_dev_videos = use_dev_videos
         self.enable_logging = enable_logging
         self.use_cache = use_cache
         self.enable_llm = enable_llm
+        self.fast_test = fast_test
         
         # Initialize session logging
         if self.enable_logging:
@@ -70,6 +71,7 @@ class BatchVideoGenerator:
         print(f"   Using development videos: {use_dev_videos}")
         print(f"   Cache enabled: {self.use_cache}")
         print(f"   LLM analysis: {llm_status}")
+        print(f"   Fast test mode: {'✅ (3 videos max)' if fast_test else '❌'}")
         print(f"   Full-length video generation: ✅")
     
     def generate_all_videos(self) -> Dict[str, str]:
@@ -152,6 +154,7 @@ class BatchVideoGenerator:
                         music_track.filename, "", None, success=False, 
                         error_message=str(e)
                     )
+            
         
         # Step 4: Generate session report
         if self.llm_logger:
@@ -266,13 +269,20 @@ class BatchVideoGenerator:
             cache_status = "enabled" if self.use_cache else "disabled"
             print(f"   🎵🎬 Starting enhanced audio-visual analysis (cache {cache_status})...")
             
-            # Step 1: Perform unified audio-visual analysis (if LLM available)
+            # Step 1: Limit videos for fast testing
+            test_video_files = video_files
+            if self.fast_test:
+                test_video_files = video_files[:3]  # Use only first 3 videos for fast testing
+                print(f"      🚀 Fast test mode: Using only {len(test_video_files)} videos")
+            
+            # Step 2: Perform unified audio-visual analysis (if LLM available)
             sync_plan = None
             if self.video_analyzer:
                 sync_plan = self.video_analyzer.analyze_audio_visual_unified(
                     audio_path=music_track.file_path,
-                    video_paths=video_files,
-                    use_dev_versions=self.use_dev_videos
+                    video_paths=test_video_files,
+                    use_dev_versions=self.use_dev_videos,
+                    use_cache=self.use_cache
                 )
                 
                 if sync_plan:
@@ -408,6 +418,8 @@ def main():
                        help='Use full resolution videos instead of downsampled versions')
     parser.add_argument('--no-logging', action='store_true',
                        help='Disable session logging')
+    parser.add_argument('--fast-test', action='store_true',
+                       help='Fast test mode: Use only 3 videos for quicker testing')
     
     args = parser.parse_args()
     
@@ -423,7 +435,8 @@ def main():
         use_dev_videos=not args.use_full_res,  # Default to downsampled
         enable_logging=not args.no_logging,
         use_cache=not args.no_cache,
-        enable_llm=True  # Always use AI
+        enable_llm=True,  # Always use AI
+        fast_test=args.fast_test
     )
     
     # Generate all full-length videos (no duration limits)

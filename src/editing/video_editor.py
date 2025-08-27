@@ -301,16 +301,13 @@ class VideoEditor:
             clip_index = i % len(loaded_clips)
             selected_clip = loaded_clips[clip_index]
             
-            # Create segment of appropriate duration
+            # Create segment of appropriate duration with intelligent extension
             if selected_clip.duration >= segment_duration:
                 # Clip is long enough, use a portion
                 segment = selected_clip.subclip(0, segment_duration)
             else:
-                # Clip is too short, loop it
-                loops_needed = int(np.ceil(segment_duration / selected_clip.duration))
-                looped_clips = [selected_clip] * loops_needed
-                looped_video = concatenate_videoclips(looped_clips)
-                segment = looped_video.subclip(0, segment_duration)
+                # Phase 1: Intelligent clip extension instead of looping
+                segment = self._extend_clip_intelligently(selected_clip, segment_duration, clips, clip_index)
             
             # Add beat-precise transitions
             if i > 0:  # Fade in for all segments except first
@@ -403,6 +400,187 @@ class VideoEditor:
                 clip.close()
         
         return final_video
+    
+    def _extend_clip_intelligently(self, short_clip: VideoFileClip, target_duration: float, 
+                                 all_clips: List[VideoClip], current_index: int) -> VideoFileClip:
+        """
+        Phase 1: Intelligently extend a short clip instead of looping it.
+        
+        Args:
+            short_clip: The clip that's too short
+            target_duration: Desired duration
+            all_clips: All available clips for potential extension
+            current_index: Index of current clip
+            
+        Returns:
+            Extended video clip
+        """
+        try:
+            # Validate inputs
+            if short_clip is None:
+                logger.warning("Short clip is None, cannot extend")
+                return short_clip
+            
+            if target_duration <= short_clip.duration:
+                # Already long enough
+                return short_clip
+            
+            # Strategy 1: Try to extend from the same source video
+            original_clip_info = all_clips[current_index]
+            source_video = None
+            
+            try:
+                source_video = VideoFileClip(original_clip_info.file_path)
+                
+                # Calculate how much more content we need
+                additional_duration = target_duration - short_clip.duration
+                
+                # Try to extend by using content after the original clip
+                extended_end_time = original_clip_info.end_time + additional_duration
+                
+                if extended_end_time <= source_video.duration:
+                    # We can extend from the same video
+                    print(f"         🔧 Extending clip from same source (+{additional_duration:.1f}s)")
+                    extended_clip = source_video.subclip(original_clip_info.start_time, extended_end_time)
+                    
+                    # Validate the extended clip
+                    if extended_clip is not None and hasattr(extended_clip, 'duration'):
+                        source_video.close()
+                        return extended_clip
+                    else:
+                        logger.warning("Extended clip is None or invalid")
+                        if extended_clip:
+                            extended_clip.close()
+                
+                source_video.close()
+            except Exception as e:
+                logger.warning(f"Failed to extend from same source: {e}")
+                if 'source_video' in locals() and source_video:
+                    source_video.close()
+            
+            # Strategy 2: Try to extend by using content before the original clip
+            try:
+                source_video = VideoFileClip(original_clip_info.file_path)
+                additional_duration = target_duration - short_clip.duration
+                extended_start_time = max(0, original_clip_info.start_time - additional_duration)
+                if extended_start_time < original_clip_info.start_time:
+                    print(f"         🔧 Extending clip backwards from same source (+{additional_duration:.1f}s)")
+                    extended_clip = source_video.subclip(extended_start_time, original_clip_info.end_time)
+                    
+                    # Validate the extended clip
+                    if extended_clip is not None and hasattr(extended_clip, 'duration'):
+                        source_video.close()
+                        return extended_clip
+                    else:
+                        logger.warning("Backwards extended clip is None or invalid")
+                        if extended_clip:
+                            extended_clip.close()
+                
+                source_video.close()
+            except Exception as e:
+                logger.warning(f"Failed to extend backwards from same source: {e}")
+                if 'source_video' in locals() and source_video:
+                    source_video.close()
+            
+            # Strategy 3: Find a different clip from the same video that's longer
+            try:
+                same_video_clips = [clip for clip in all_clips if clip.file_path == original_clip_info.file_path]
+                for alt_clip in same_video_clips:
+                    if alt_clip.duration >= target_duration:
+                        print(f"         🔧 Using longer clip from same source ({alt_clip.duration:.1f}s)")
+                        alt_video = VideoFileClip(alt_clip.file_path).subclip(alt_clip.start_time, alt_clip.end_time)
+                        if alt_video is not None:
+                            return alt_video.subclip(0, target_duration)
+                        alt_video.close()
+            except Exception as e:
+                logger.warning(f"Failed to find longer clip from same source: {e}")
+            
+            # Strategy 4: Combine with a different clip for variety
+            try:
+                if len(all_clips) > 1:
+                    # Find a different clip to combine with
+                    other_clips = [clip for i, clip in enumerate(all_clips) if i != current_index]
+                    if other_clips:
+                        # Sort by quality and pick the best one
+                        other_clips.sort(key=lambda x: x.quality_score, reverse=True)
+                        complement_clip_info = other_clips[0]
+                        
+                        complement_video = VideoFileClip(complement_clip_info.file_path).subclip(
+                            complement_clip_info.start_time, complement_clip_info.end_time
+                        )
+                        
+                        if complement_video is not None:
+                            # Calculate how much we need from the complement clip
+                            additional_duration = target_duration - short_clip.duration
+                            complement_duration = min(additional_duration, complement_video.duration)
+                            complement_segment = complement_video.subclip(0, complement_duration)
+                            
+                            print(f"         🔧 Combining with different clip (+{complement_duration:.1f}s)")
+                            
+                            # Combine the clips with a smooth transition
+                            complement_segment = complement_segment.fx(vfx.fadein, 0.5)
+                            combined_clip = concatenate_videoclips([short_clip, complement_segment])
+                            
+                            complement_video.close()
+                            
+                            # Trim to exact target duration if needed
+                            if combined_clip.duration > target_duration:
+                                final_clip = combined_clip.subclip(0, target_duration)
+                                combined_clip.close()
+                                return final_clip
+                            
+                            return combined_clip
+                        
+                        complement_video.close()
+            except Exception as e:
+                logger.warning(f"Failed to combine with different clip: {e}")
+            
+            # Strategy 5: Last resort - slow down the clip slightly to reach target duration
+            try:
+                if short_clip.duration > 0:
+                    speed_factor = short_clip.duration / target_duration
+                    if speed_factor >= 0.7:  # Don't slow down more than 30%
+                        print(f"         🔧 Slowing down clip by {(1-speed_factor)*100:.1f}% to reach target duration")
+                        slowed_clip = short_clip.fx(vfx.speedx, speed_factor)
+                        
+                        # Validate the slowed clip
+                        if slowed_clip is not None and hasattr(slowed_clip, 'duration'):
+                            return slowed_clip
+                        else:
+                            logger.warning("Slowed clip is None or invalid")
+                            if slowed_clip:
+                                slowed_clip.close()
+            except Exception as e:
+                logger.warning(f"Failed to slow down clip: {e}")
+            
+            # Final fallback: Use the short clip as-is and pad with freeze frame
+            try:
+                print(f"         🔧 Padding short clip with freeze frame")
+                freeze_duration = target_duration - short_clip.duration
+                if freeze_duration > 0:
+                    # Get the last frame and extend it
+                    last_frame = short_clip.to_ImageClip(t=max(0, short_clip.duration-0.1), duration=freeze_duration)
+                    if last_frame is not None:
+                        extended_clip = concatenate_videoclips([short_clip, last_frame])
+                        
+                        # Validate the extended clip
+                        if extended_clip is not None and hasattr(extended_clip, 'duration'):
+                            return extended_clip
+                        else:
+                            logger.warning("Freeze frame extended clip is None or invalid")
+                            if extended_clip:
+                                extended_clip.close()
+                    else:
+                        logger.warning("Failed to create freeze frame")
+            except Exception as e:
+                logger.warning(f"Failed to pad with freeze frame: {e}")
+            
+            # Absolute fallback: return the original clip
+            return short_clip
+            
+        except Exception as e:
+            logger.warning(f"Intelligent clip extension failed: {e}, using original clip")
+            return short_clip
     
     def get_video_info(self, video_path: str) -> Dict:
         """

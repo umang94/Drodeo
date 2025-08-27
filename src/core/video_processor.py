@@ -36,8 +36,8 @@ class VideoProcessor:
     
     def __init__(self, use_gpu: bool = True):
         self.frame_sample_rate = 10  # analyze every 10th frame for better coverage
-        self.min_clip_duration = 1.0  # minimum 1 second (more flexible)
-        self.max_clip_duration = 25.0  # maximum 25 seconds (more flexible)
+        self.min_clip_duration = 4.0  # minimum 4 seconds (Phase 1: longer clips)
+        self.max_clip_duration = 40.0  # maximum 40 seconds (Phase 1: longer clips)
         self.keyframes_per_video = 16  # more keyframes for better AI analysis
         
         # Initialize GPU processor if available
