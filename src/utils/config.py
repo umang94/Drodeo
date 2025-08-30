@@ -42,6 +42,33 @@ AUDIO_CONFIG = {
     "beat_detection_threshold": 0.3,
 }
 
+# Gemini API Video Analysis settings
+GEMINI_VIDEO_CONFIG = {
+    # Gemini API Configuration
+    "api_key": os.getenv('GEMINI_API_KEY'),
+    "model_name": 'gemini-2.5-flash',  # Latest model with video support
+    
+    # Video Processing Configuration
+    "max_inline_video_size_mb": 20,    # Direct upload limit
+    "use_file_api_for_large": True,    # Use File API for >20MB videos
+    "custom_frame_rate": 1,            # 1 FPS sampling rate
+    
+    # Music-Aware Analysis Configuration
+    "enable_music_sync_analysis": True,
+    "enable_beat_alignment": True,
+    "enable_energy_matching": True,
+    "enable_visual_rhythm_analysis": True,
+    
+    # Performance Configuration
+    "api_timeout_seconds": 120,        # Faster than Google Video Intelligence
+    "cache_responses": True,
+    "max_retries": 3,
+    
+    # Cost Management
+    "monthly_budget_limit": 50.0,      # USD
+    "cost_alert_threshold": 0.8,
+}
+
 # Development settings
 DEV_CONFIG = {
     "downsample_resolution": (640, 360),  # 360p for fast development

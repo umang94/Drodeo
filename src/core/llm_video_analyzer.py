@@ -20,6 +20,15 @@ from openai import OpenAI
 import librosa
 import numpy as np
 
+# Gemini API imports
+try:
+    import google.generativeai as genai
+    from google.generativeai import types
+    GEMINI_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Gemini API library not available: {e}")
+    GEMINI_AVAILABLE = False
+
 # Import audio analyzer and logging
 from src.audio.audio_analyzer import AudioFeatures, AudioAnalyzer
 from src.utils.llm_logger import LLMResponseLogger
@@ -1156,6 +1165,790 @@ Return your analysis in a structured format with specific timestamps and clear r
             
         except Exception as e:
             logger.error(f"Failed to save analysis cache: {e}")
+
+
+# Gemini Video Intelligence data structures
+@dataclass
+class MusicSyncSegment:
+    """Video segment optimized for music synchronization"""
+    start_time: float
+    end_time: float
+    energy_level: str        # "high", "medium", "low"
+    music_compatibility: str # "buildup", "drop", "calm", "climax"
+    visual_rhythm: str       # "fast", "moderate", "slow"
+    recommended_bpm: float   # Optimal BPM for this segment
+    confidence: float        # Analysis confidence
+
+@dataclass
+class GeminiVideoAnalysis:
+    """Comprehensive video analysis from Gemini API optimized for music synchronization"""
+    file_path: str
+    duration: float
+    music_sync_segments: List[MusicSyncSegment]  # Segments optimized for music
+    beat_aligned_cuts: List[float]               # Optimal cut points for beats
+    energy_profile: Dict[str, List[float]]       # High/medium/low energy timestamps
+    narrative_flow: str                          # Story arc description
+    sync_confidence: float                       # Confidence in music matching
+    gemini_reasoning: str                        # Natural language analysis
+    processing_time: float = 0.0
+    api_cost: float = 0.0
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            'file_path': self.file_path,
+            'duration': self.duration,
+            'music_sync_segments': [{'start': s.start_time, 'end': s.end_time, 
+                                   'energy': s.energy_level, 'compatibility': s.music_compatibility,
+                                   'rhythm': s.visual_rhythm, 'bpm': s.recommended_bpm,
+                                   'confidence': s.confidence} for s in self.music_sync_segments],
+            'beat_aligned_cuts': self.beat_aligned_cuts,
+            'energy_profile': self.energy_profile,
+            'narrative_flow': self.narrative_flow,
+            'sync_confidence': self.sync_confidence,
+            'gemini_reasoning': self.gemini_reasoning,
+            'processing_time': self.processing_time,
+            'api_cost': self.api_cost
+        }
+
+
+class GeminiVideoAnalyzer:
+    """Analyzes videos using Gemini API for music-driven video generation."""
+    
+    def __init__(self):
+        """Initialize Gemini video analyzer."""
+        self.model = None
+        
+        if not GEMINI_AVAILABLE:
+            print("   ⚠️  Gemini API library not available")
+            return
+        
+        try:
+            # Configure Gemini API
+            api_key = os.getenv('GEMINI_API_KEY')
+            if not api_key:
+                print("   ⚠️  GEMINI_API_KEY not found in environment variables")
+                return
+            
+            genai.configure(api_key=api_key)
+            self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            
+            print("   ✅ Gemini API initialized successfully")
+                
+        except Exception as e:
+            logger.error(f"Failed to initialize Gemini: {e}")
+            print(f"   ❌ Gemini initialization failed: {e}")
+            self.model = None
+    
+    def is_available(self) -> bool:
+        """Check if Gemini API is available and configured."""
+        return GEMINI_AVAILABLE and self.model is not None
+    
+    def analyze_video_comprehensive(self, video_path: str, use_cache: bool = True) -> Optional[GeminiVideoAnalysis]:
+        """
+        Analyze a video file using Gemini API for comprehensive understanding.
+        
+        Args:
+            video_path: Path to video file
+            use_cache: Whether to use cached results
+            
+        Returns:
+            GeminiVideoAnalysis object or None if analysis fails
+        """
+        if not self.is_available():
+            print(f"   ❌ Cannot analyze {Path(video_path).name} - Gemini API not available")
+            return None
+        
+        print(f"   🌟 Analyzing video with Gemini API: {Path(video_path).name}")
+        
+        start_time = time.time()
+        
+        try:
+            # Step 1: Check cache first
+            if use_cache:
+                cached_analysis = self._load_cached_analysis(video_path)
+                if cached_analysis:
+                    print(f"      ✅ Using cached Gemini analysis")
+                    return cached_analysis
+            
+            # Step 2: Upload video to Gemini
+            print(f"      📤 Uploading video to Gemini...")
+            video_file = self._upload_video_to_gemini(video_path)
+            if not video_file:
+                print(f"      ❌ Failed to upload video to Gemini")
+                return None
+            
+            # Step 3: Request comprehensive analysis
+            print(f"      🔍 Requesting Gemini video analysis...")
+            analysis_result = self._request_video_analysis(video_file, video_path)
+            
+            processing_time = time.time() - start_time
+            
+            if analysis_result:
+                analysis_result.processing_time = processing_time
+                print(f"      ✅ Gemini analysis complete ({processing_time:.2f}s)")
+                print(f"         Music sync segments: {len(analysis_result.music_sync_segments)}")
+                print(f"         Beat aligned cuts: {len(analysis_result.beat_aligned_cuts)}")
+                print(f"         Sync confidence: {analysis_result.sync_confidence:.2f}")
+                
+                # Cache the results
+                if use_cache:
+                    self._cache_analysis(video_path, analysis_result)
+                
+                return analysis_result
+            else:
+                print(f"      ❌ Gemini analysis failed")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Gemini analysis failed for {video_path}: {e}")
+            print(f"      ❌ Error in Gemini analysis: {e}")
+            return None
+    
+    def analyze_for_music_sync(self, video_path: str, audio_features: AudioFeatures, use_cache: bool = True) -> Optional[GeminiVideoAnalysis]:
+        """
+        Analyze a video specifically for music synchronization using Gemini API.
+        
+        Args:
+            video_path: Path to video file
+            audio_features: Audio analysis results for music-aware prompting
+            use_cache: Whether to use cached results
+            
+        Returns:
+            GeminiVideoAnalysis object optimized for music sync or None if analysis fails
+        """
+        if not self.is_available():
+            print(f"   ❌ Cannot analyze {Path(video_path).name} - Gemini API not available")
+            return None
+        
+        print(f"   🎵 Analyzing video for music sync with Gemini API: {Path(video_path).name}")
+        print(f"      Music: {audio_features.tempo:.1f} BPM, {audio_features.duration:.1f}s")
+        
+        start_time = time.time()
+        
+        try:
+            # Step 1: Check cache first (music-specific cache)
+            if use_cache:
+                cached_analysis = self._load_cached_music_analysis(video_path, audio_features)
+                if cached_analysis:
+                    print(f"      ✅ Using cached music-sync analysis")
+                    return cached_analysis
+            
+            # Step 2: Upload video to Gemini
+            print(f"      📤 Uploading video to Gemini...")
+            video_file = self._upload_video_to_gemini(video_path)
+            if not video_file:
+                print(f"      ❌ Failed to upload video to Gemini")
+                return None
+            
+            # Step 3: Request music-aware analysis
+            print(f"      🎵 Requesting music-aware analysis...")
+            analysis_result = self._request_music_sync_analysis(video_file, video_path, audio_features)
+            
+            processing_time = time.time() - start_time
+            
+            if analysis_result:
+                analysis_result.processing_time = processing_time
+                print(f"      ✅ Music-sync analysis complete ({processing_time:.2f}s)")
+                print(f"         Recommended BPM matches: {len([s for s in analysis_result.music_sync_segments if abs(s.recommended_bpm - audio_features.tempo) < 20])}")
+                print(f"         Beat alignment confidence: {analysis_result.sync_confidence:.2f}")
+                
+                # Cache the results
+                if use_cache:
+                    self._cache_music_analysis(video_path, audio_features, analysis_result)
+                
+                return analysis_result
+            else:
+                print(f"      ❌ Music-sync analysis failed")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Gemini music-sync analysis failed for {video_path}: {e}")
+            print(f"      ❌ Error in music-sync analysis: {e}")
+            return None
+    
+    def _upload_video_to_gemini(self, video_path: str) -> Optional[Any]:
+        """Upload video file to Gemini API."""
+        try:
+            # Check file size
+            file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            
+            if file_size_mb <= 20:  # Use inline upload for small files
+                print(f"         Using inline upload for {file_size_mb:.1f}MB file")
+                return self._upload_inline(video_path)
+            else:
+                print(f"         Using File API for {file_size_mb:.1f}MB file")
+                return self._upload_with_file_api(video_path)
+                
+        except Exception as e:
+            logger.error(f"Failed to upload video to Gemini: {e}")
+            return None
+    
+    def _upload_inline(self, video_path: str) -> Optional[Any]:
+        """Upload video inline for small files."""
+        try:
+            # Upload file using the File API
+            print(f"         Uploading {Path(video_path).name} to Gemini...")
+            uploaded_file = genai.upload_file(path=video_path)
+            
+            print(f"         Upload complete: {uploaded_file.name}")
+            
+            # Wait for file to be processed
+            print(f"         Waiting for file to be processed...")
+            import time
+            max_wait_time = 60  # Maximum wait time in seconds
+            wait_interval = 2   # Check every 2 seconds
+            elapsed_time = 0
+            
+            while uploaded_file.state.name == "PROCESSING" and elapsed_time < max_wait_time:
+                time.sleep(wait_interval)
+                elapsed_time += wait_interval
+                uploaded_file = genai.get_file(uploaded_file.name)
+                print(f"         File state: {uploaded_file.state.name} ({elapsed_time}s)")
+            
+            if uploaded_file.state.name == "ACTIVE":
+                print(f"         File ready for analysis: {uploaded_file.state.name}")
+                return uploaded_file
+            else:
+                print(f"         File processing failed or timed out: {uploaded_file.state.name}")
+                return None
+            
+        except Exception as e:
+            print(f"Failed to upload video inline: {e}")
+            logger.error(f"Failed to upload video inline: {e}")
+            return None
+    
+    def _upload_with_file_api(self, video_path: str) -> Optional[Any]:
+        """Upload video using Gemini File API for larger files."""
+        try:
+            # Upload using File API
+            uploaded_file = self.client.files.upload(file=video_path)
+            
+            # Create file data part
+            video_part = types.Part(
+                file_data=types.FileData(
+                    file_uri=uploaded_file.uri,
+                    mime_type=uploaded_file.mime_type
+                )
+            )
+            
+            return video_part
+            
+        except Exception as e:
+            logger.error(f"Failed to upload video with File API: {e}")
+            return None
+    
+    def _request_video_analysis(self, video_file: Any, video_path: str) -> Optional[GeminiVideoAnalysis]:
+        """Request comprehensive video analysis from Gemini API."""
+        try:
+            # Create analysis prompt
+            prompt = self._create_comprehensive_analysis_prompt(video_path)
+            
+            print(f"         Sending analysis request to Gemini...")
+            
+            # Request analysis using the model's generate_content method
+            response = self.model.generate_content([video_file, prompt])
+            
+            print(f"         Received response from Gemini")
+            
+            # Parse response
+            return self._parse_comprehensive_response(response.text, video_path)
+            
+        except Exception as e:
+            print(f"Failed to request video analysis: {e}")
+            logger.error(f"Failed to request video analysis: {e}")
+            return None
+    
+    def _request_music_sync_analysis(self, video_part: Any, video_path: str, audio_features: AudioFeatures) -> Optional[GeminiVideoAnalysis]:
+        """Request music-aware video analysis from Gemini API."""
+        try:
+            # Create music-aware analysis prompt
+            prompt = self._create_music_sync_prompt(video_path, audio_features)
+            
+            # Create content with video and prompt
+            content = types.Content(
+                parts=[
+                    video_part,
+                    types.Part(text=prompt)
+                ]
+            )
+            
+            # Request analysis
+            response = self.client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[content]
+            )
+            
+            # Parse response
+            return self._parse_music_sync_response(response.text, video_path, audio_features)
+            
+        except Exception as e:
+            logger.error(f"Failed to request music-sync analysis: {e}")
+            return None
+    
+    def _create_comprehensive_analysis_prompt(self, video_path: str) -> str:
+        """Create comprehensive analysis prompt for Gemini."""
+        filename = Path(video_path).name
+        
+        prompt = f"""
+Analyze this video comprehensively for music-driven video editing:
+
+**Video File:** {filename}
+
+**Analysis Required:**
+
+1. **Video Segments**: Divide the video into 4-8 segments based on visual content, energy, and natural transitions. For each segment provide:
+   - Start and end timestamps (in seconds)
+   - Energy level (high/medium/low)
+   - Visual rhythm (fast/moderate/slow)
+   - Music compatibility (buildup/drop/calm/climax)
+   - Recommended BPM range for this segment
+
+2. **Beat-Aligned Cut Points**: Identify 8-12 optimal timestamps where video cuts would work naturally with musical beats. Consider:
+   - Natural scene transitions
+   - Movement changes
+   - Visual rhythm shifts
+   - Action peaks or pauses
+
+3. **Energy Profile**: Analyze the video's energy throughout its duration:
+   - High energy timestamps (action, fast movement, dynamic scenes)
+   - Medium energy timestamps (moderate activity, transitions)
+   - Low energy timestamps (calm, peaceful, establishing shots)
+
+4. **Narrative Flow**: Describe the overall story arc and how it could complement music structure:
+   - Beginning/intro potential
+   - Build-up sections
+   - Climax moments
+   - Resolution/outro potential
+
+5. **Music Synchronization Confidence**: Rate how well this video would synchronize with music (0.0-1.0) and explain why.
+
+**Output Format:**
+Please structure your response clearly with specific timestamps and actionable insights for music-video synchronization.
+
+Focus on creating precise, beat-aligned recommendations that will eliminate repetition and create smooth, music-driven video flow.
+"""
+        return prompt
+    
+    def _create_music_sync_prompt(self, video_path: str, audio_features: AudioFeatures) -> str:
+        """Create music-aware analysis prompt for Gemini."""
+        filename = Path(video_path).name
+        
+        prompt = f"""
+Analyze this video specifically for synchronization with the provided music:
+
+**Video File:** {filename}
+**Music Details:**
+- Duration: {audio_features.duration:.1f} seconds
+- Tempo: {audio_features.tempo:.1f} BPM
+- Beat count: {len(audio_features.beats)} beats
+- Average beat interval: {audio_features.average_beat_interval:.2f}s
+
+**Key Beat Timestamps:** {[f'{b:.1f}s' for b in audio_features.beats[:20]]}
+
+**Music-Aware Analysis Required:**
+
+1. **Music Sync Segments**: Divide the video into segments that match the music's {audio_features.tempo:.1f} BPM tempo:
+   - Segments with fast visual rhythm matching high BPM
+   - Segments with slow visual rhythm for melodic parts
+   - Energy levels that complement the music's energy profile
+
+2. **Beat-Aligned Cuts**: Identify cut points that align with the provided beat timestamps:
+   - Natural transitions at beat markers
+   - Visual rhythm changes that match musical beats
+   - Action peaks that coincide with strong beats
+
+3. **Energy Matching**: Match video energy to music energy:
+   - High energy video segments for intense musical parts
+   - Calm video segments for softer musical sections
+   - Dynamic segments for build-ups and drops
+
+4. **Visual Rhythm Analysis**: Analyze how the video's visual pace complements {audio_features.tempo:.1f} BPM:
+   - Fast cuts and movement for uptempo sections
+   - Slower, flowing shots for melodic parts
+   - Rhythmic patterns that enhance musical rhythm
+
+5. **BPM Recommendations**: For each video segment, recommend optimal BPM ranges that would work best.
+
+**Goal:** Create perfect synchronization between this video and the {audio_features.tempo:.1f} BPM music track.
+
+Provide specific timestamps, energy levels, and synchronization confidence scores.
+"""
+        return prompt
+    
+    def _parse_comprehensive_response(self, response_text: str, video_path: str) -> Optional[GeminiVideoAnalysis]:
+        """Parse Gemini comprehensive analysis response."""
+        try:
+            # Get video duration
+            try:
+                clip = VideoFileClip(video_path)
+                duration = clip.duration
+                clip.close()
+            except:
+                duration = 60.0  # Default fallback
+            
+            # Extract music sync segments
+            music_sync_segments = self._extract_music_sync_segments(response_text)
+            
+            # Extract beat-aligned cuts
+            beat_aligned_cuts = self._extract_beat_cuts(response_text)
+            
+            # Extract energy profile
+            energy_profile = self._extract_energy_profile(response_text, duration)
+            
+            # Extract narrative flow
+            narrative_flow = self._extract_narrative_flow(response_text)
+            
+            # Extract sync confidence
+            sync_confidence = self._extract_confidence_score(response_text)
+            
+            return GeminiVideoAnalysis(
+                file_path=video_path,
+                duration=duration,
+                music_sync_segments=music_sync_segments,
+                beat_aligned_cuts=beat_aligned_cuts,
+                energy_profile=energy_profile,
+                narrative_flow=narrative_flow,
+                sync_confidence=sync_confidence,
+                gemini_reasoning=response_text[:1000]
+            )
+            
+        except Exception as e:
+            logger.error(f"Error parsing comprehensive response: {e}")
+            return None
+    
+    def _parse_music_sync_response(self, response_text: str, video_path: str, audio_features: AudioFeatures) -> Optional[GeminiVideoAnalysis]:
+        """Parse Gemini music-sync analysis response."""
+        try:
+            # Get video duration
+            try:
+                clip = VideoFileClip(video_path)
+                duration = clip.duration
+                clip.close()
+            except:
+                duration = audio_features.duration  # Use music duration as fallback
+            
+            # Extract music sync segments with BPM awareness
+            music_sync_segments = self._extract_music_sync_segments_with_bpm(response_text, audio_features.tempo)
+            
+            # Extract beat-aligned cuts using provided beats
+            beat_aligned_cuts = self._extract_beat_cuts_with_beats(response_text, audio_features.beats)
+            
+            # Extract energy profile
+            energy_profile = self._extract_energy_profile(response_text, duration)
+            
+            # Extract narrative flow
+            narrative_flow = self._extract_narrative_flow(response_text)
+            
+            # Extract sync confidence
+            sync_confidence = self._extract_confidence_score(response_text)
+            
+            return GeminiVideoAnalysis(
+                file_path=video_path,
+                duration=duration,
+                music_sync_segments=music_sync_segments,
+                beat_aligned_cuts=beat_aligned_cuts,
+                energy_profile=energy_profile,
+                narrative_flow=narrative_flow,
+                sync_confidence=sync_confidence,
+                gemini_reasoning=response_text[:1000]
+            )
+            
+        except Exception as e:
+            logger.error(f"Error parsing music-sync response: {e}")
+            return None
+    
+    def _extract_music_sync_segments(self, text: str) -> List[MusicSyncSegment]:
+        """Extract music sync segments from response text."""
+        segments = []
+        
+        # Simple extraction - create default segments
+        # In a real implementation, this would parse the actual response
+        import re
+        
+        # Look for timestamp patterns
+        timestamp_pattern = r'(\d+\.?\d*)-(\d+\.?\d*)\s*(?:seconds?|s)'
+        matches = re.findall(timestamp_pattern, text.lower())
+        
+        for i, match in enumerate(matches[:8]):  # Limit to 8 segments
+            try:
+                start_time = float(match[0])
+                end_time = float(match[1])
+                
+                # Extract energy level from context
+                energy_level = "medium"
+                if "high energy" in text.lower() or "intense" in text.lower():
+                    energy_level = "high"
+                elif "calm" in text.lower() or "low energy" in text.lower():
+                    energy_level = "low"
+                
+                # Extract music compatibility
+                compatibility = "calm"
+                if "buildup" in text.lower():
+                    compatibility = "buildup"
+                elif "drop" in text.lower() or "climax" in text.lower():
+                    compatibility = "drop"
+                elif "climax" in text.lower():
+                    compatibility = "climax"
+                
+                # Extract visual rhythm
+                visual_rhythm = "moderate"
+                if "fast" in text.lower():
+                    visual_rhythm = "fast"
+                elif "slow" in text.lower():
+                    visual_rhythm = "slow"
+                
+                segments.append(MusicSyncSegment(
+                    start_time=start_time,
+                    end_time=end_time,
+                    energy_level=energy_level,
+                    music_compatibility=compatibility,
+                    visual_rhythm=visual_rhythm,
+                    recommended_bpm=120.0,  # Default BPM
+                    confidence=0.8
+                ))
+                
+            except:
+                continue
+        
+        # If no segments found, create default segments
+        if not segments:
+            segments = [
+                MusicSyncSegment(
+                    start_time=0.0,
+                    end_time=30.0,
+                    energy_level="medium",
+                    music_compatibility="calm",
+                    visual_rhythm="moderate",
+                    recommended_bpm=120.0,
+                    confidence=0.7
+                )
+            ]
+        
+        return segments
+    
+    def _extract_music_sync_segments_with_bpm(self, text: str, target_bpm: float) -> List[MusicSyncSegment]:
+        """Extract music sync segments with BPM awareness."""
+        segments = self._extract_music_sync_segments(text)
+        
+        # Update BPM recommendations based on target BPM
+        for segment in segments:
+            if segment.visual_rhythm == "fast":
+                segment.recommended_bpm = target_bpm * 1.2  # 20% faster
+            elif segment.visual_rhythm == "slow":
+                segment.recommended_bpm = target_bpm * 0.8  # 20% slower
+            else:
+                segment.recommended_bpm = target_bpm
+        
+        return segments
+    
+    def _extract_beat_cuts(self, text: str) -> List[float]:
+        """Extract beat-aligned cut points from response text."""
+        import re
+        
+        # Look for various timestamp formats
+        patterns = [
+            r'(\d+\.?\d*)\s*seconds?',
+            r'(\d+):(\d+)',  # mm:ss format
+            r'at\s+(\d+\.?\d*)',
+        ]
+        
+        timestamps = []
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, text.lower())
+            for match in matches:
+                try:
+                    if isinstance(match, tuple) and len(match) == 2:
+                        # mm:ss format
+                        timestamp = int(match[0]) * 60 + int(match[1])
+                    else:
+                        timestamp = float(match)
+                    
+                    if 0 <= timestamp <= 300:  # Reasonable range
+                        timestamps.append(timestamp)
+                except:
+                    continue
+        
+        # Remove duplicates and sort
+        timestamps = sorted(list(set(timestamps)))
+        return timestamps[:12]  # Limit to 12 cuts
+    
+    def _extract_beat_cuts_with_beats(self, text: str, beats: List[float]) -> List[float]:
+        """Extract beat cuts aligned with provided beats."""
+        extracted_cuts = self._extract_beat_cuts(text)
+        
+        if not extracted_cuts:
+            # Use every 4th beat as fallback
+            return beats[::4][:12]
+        
+        # Align extracted cuts with nearest beats
+        aligned_cuts = []
+        for cut in extracted_cuts:
+            # Find nearest beat
+            nearest_beat = min(beats, key=lambda b: abs(b - cut))
+            if abs(nearest_beat - cut) < 2.0:  # Within 2 seconds
+                aligned_cuts.append(nearest_beat)
+            else:
+                aligned_cuts.append(cut)
+        
+        return aligned_cuts[:12]
+    
+    def _extract_energy_profile(self, text: str, duration: float) -> Dict[str, List[float]]:
+        """Extract energy profile from response text."""
+        # Create default energy profile
+        num_windows = int(duration / 5)  # 5-second windows
+        
+        energy_profile = {
+            "high": [],
+            "medium": [],
+            "low": []
+        }
+        
+        # Simple extraction based on keywords
+        if "high energy" in text.lower():
+            energy_profile["high"] = [i * 5 for i in range(0, num_windows, 3)]
+        if "medium energy" in text.lower() or "moderate" in text.lower():
+            energy_profile["medium"] = [i * 5 for i in range(1, num_windows, 3)]
+        if "low energy" in text.lower() or "calm" in text.lower():
+            energy_profile["low"] = [i * 5 for i in range(2, num_windows, 3)]
+        
+        return energy_profile
+    
+    def _extract_narrative_flow(self, text: str) -> str:
+        """Extract narrative flow description from LLM response"""
+        # Look for narrative/story sections
+        markers = ["narrative", "story", "flow", "arc", "structure"]
+        
+        for marker in markers:
+            start_idx = text.lower().find(marker)
+            if start_idx != -1:
+                # Extract next 200 characters
+                end_idx = min(start_idx + 300, len(text))
+                section = text[start_idx:end_idx].strip()
+                
+                # Clean up the section
+                sentences = section.split('.')
+                if len(sentences) > 1:
+                    return '. '.join(sentences[:2]) + '.'
+                else:
+                    return section
+        
+        # Default narrative flow
+        return "Progressive energy build with beat-synchronized transitions"
+    
+    def _extract_confidence_score(self, text: str) -> float:
+        """Extract confidence score from LLM response"""
+        import re
+        
+        # Look for confidence patterns
+        patterns = [
+            r'confidence[:\s]+(\d+\.?\d*)%',
+            r'confidence[:\s]+(\d+\.?\d*)/10',
+            r'confidence[:\s]+(\d+\.?\d*)',
+            r'(\d+\.?\d*)%\s+confidence',
+            r'rate[:\s]+(\d+\.?\d*)/10',
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, text.lower())
+            if matches:
+                try:
+                    score = float(matches[0])
+                    # Normalize to 0-1 range
+                    if score > 1:
+                        score = score / 100 if score <= 100 else score / 10
+                    return min(1.0, max(0.0, score))
+                except:
+                    continue
+        
+        # Default confidence
+        return 0.75
+    
+    def _load_cached_analysis(self, video_path: str) -> Optional[GeminiVideoAnalysis]:
+        """Load cached Gemini analysis if available."""
+        # Simple cache implementation - in practice, use proper cache manager
+        cache_file = f"cache/gemini_{Path(video_path).stem}.json"
+        
+        try:
+            if os.path.exists(cache_file):
+                with open(cache_file, 'r') as f:
+                    data = json.load(f)
+                
+                # Reconstruct GeminiVideoAnalysis object
+                segments = [MusicSyncSegment(**seg) for seg in data.get('music_sync_segments', [])]
+                
+                return GeminiVideoAnalysis(
+                    file_path=data['file_path'],
+                    duration=data['duration'],
+                    music_sync_segments=segments,
+                    beat_aligned_cuts=data['beat_aligned_cuts'],
+                    energy_profile=data['energy_profile'],
+                    narrative_flow=data['narrative_flow'],
+                    sync_confidence=data['sync_confidence'],
+                    gemini_reasoning=data['gemini_reasoning'],
+                    processing_time=data.get('processing_time', 0.0),
+                    api_cost=data.get('api_cost', 0.0)
+                )
+        except:
+            pass
+        
+        return None
+    
+    def _load_cached_music_analysis(self, video_path: str, audio_features: AudioFeatures) -> Optional[GeminiVideoAnalysis]:
+        """Load cached music-specific analysis if available."""
+        # Music-specific cache with BPM in filename
+        cache_file = f"cache/gemini_music_{Path(video_path).stem}_{int(audio_features.tempo)}bpm.json"
+        
+        try:
+            if os.path.exists(cache_file):
+                with open(cache_file, 'r') as f:
+                    data = json.load(f)
+                
+                # Reconstruct GeminiVideoAnalysis object
+                segments = [MusicSyncSegment(**seg) for seg in data.get('music_sync_segments', [])]
+                
+                return GeminiVideoAnalysis(
+                    file_path=data['file_path'],
+                    duration=data['duration'],
+                    music_sync_segments=segments,
+                    beat_aligned_cuts=data['beat_aligned_cuts'],
+                    energy_profile=data['energy_profile'],
+                    narrative_flow=data['narrative_flow'],
+                    sync_confidence=data['sync_confidence'],
+                    gemini_reasoning=data['gemini_reasoning'],
+                    processing_time=data.get('processing_time', 0.0),
+                    api_cost=data.get('api_cost', 0.0)
+                )
+        except:
+            pass
+        
+        return None
+    
+    def _cache_analysis(self, video_path: str, analysis: GeminiVideoAnalysis) -> None:
+        """Cache Gemini analysis results."""
+        try:
+            os.makedirs("cache", exist_ok=True)
+            cache_file = f"cache/gemini_{Path(video_path).stem}.json"
+            
+            with open(cache_file, 'w') as f:
+                json.dump(analysis.to_dict(), f, indent=2)
+                
+        except Exception as e:
+            logger.warning(f"Failed to cache analysis: {e}")
+    
+    def _cache_music_analysis(self, video_path: str, audio_features: AudioFeatures, analysis: GeminiVideoAnalysis) -> None:
+        """Cache music-specific analysis results."""
+        try:
+            os.makedirs("cache", exist_ok=True)
+            cache_file = f"cache/gemini_music_{Path(video_path).stem}_{int(audio_features.tempo)}bpm.json"
+            
+            with open(cache_file, 'w') as f:
+                json.dump(analysis.to_dict(), f, indent=2)
+                
+        except Exception as e:
+            logger.warning(f"Failed to cache music analysis: {e}")
+
 
 def test_video_analysis():
     """Test the LLM video analyzer with a sample video."""

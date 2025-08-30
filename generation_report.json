@@ -3,13 +3,13 @@
   "total_videos_generated": 2,
   "videos": {
     "Fractite - Quicky-qPBvJ6E7RXY.mp3": {
-      "output_path": "output/Fractite - Quicky-qPBvJ6E7RXY_13clips_79s.mp4",
-      "file_size_mb": 6.9,
+      "output_path": "output/Fractite - Quicky-qPBvJ6E7RXY_7clips_180s.mp4",
+      "file_size_mb": 15.3,
       "exists": true
     },
     "Silent California ( royalty free).m4a": {
-      "output_path": "output/Silent California  royalty free_13clips_206s.mp4",
-      "file_size_mb": 16.9,
+      "output_path": "output/Silent California  royalty free_7clips_180s.mp4",
+      "file_size_mb": 15.2,
       "exists": true
     }
   }
