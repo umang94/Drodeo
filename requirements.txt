@@ -1,22 +1,21 @@
+# Core video processing dependencies
 moviepy==1.0.3
 opencv-python==4.8.1.78
 numpy>=1.24.0
-openai==1.101.0
 python-dotenv==1.0.0
 tqdm==4.66.1
 requests==2.31.0
 scipy>=1.11.0
-librosa==0.11.0
-soundfile>=0.12.0
 
-# Gemini API dependency for video analysis
+# Gemini API dependency for multimodal video analysis
 google-generativeai>=0.8.0
 
-# GPU acceleration dependencies (optional)
-# CUDA support for Linux/Windows
-cupy-cuda12x>=12.0.0; sys_platform != "darwin"
-torch>=2.0.0; sys_platform != "darwin"
-opencv-contrib-python>=4.8.0; sys_platform != "darwin"
+# Audio processing (used by moviepy and for potential future audio analysis)
+soundfile>=0.12.0
 
-# macOS Apple Silicon support
-torch>=2.0.0; sys_platform == "darwin"
+# Note: The following dependencies have been removed as they are not used by the current working system:
+# - openai (not used - system uses Gemini API only)
+# - librosa (not used - audio analysis handled by Gemini)
+# - cupy-cuda12x (not used - no GPU acceleration currently implemented)
+# - torch (not used - no PyTorch models in current system)
+# - opencv-contrib-python (not used - basic opencv-python is sufficient)

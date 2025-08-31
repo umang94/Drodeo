@@ -22,7 +22,6 @@ load_dotenv(override=True)
 # Add src to path for imports
 sys.path.append('src')
 
-from src.core.music_analyzer import MusicInputManager
 from src.core.gemini_multimodal_analyzer import GeminiMultimodalAnalyzer
 from src.core.gemini_self_translator import GeminiSelfTranslator
 from src.editing.video_editor import VideoEditor
@@ -49,9 +48,6 @@ class BatchVideoGenerator:
             print(f"📝 Session logging enabled: {self.session_id}")
         else:
             self.llm_logger = None
-        
-        # Initialize components with logging
-        self.music_manager = MusicInputManager()
         
         # Initialize Gemini multimodal analyzer only if enabled and API key available
         if self.enable_llm and os.getenv('GEMINI_API_KEY'):
@@ -87,10 +83,10 @@ class BatchVideoGenerator:
         
         # Step 1: Scan music tracks
         print("\n📊 Step 1: Scanning music tracks...")
-        music_tracks = self.music_manager.scan_music_folder()
+        music_tracks = self._get_music_files("music_input")
         
         if not music_tracks:
-            print("❌ No music tracks found in music/ folder")
+            print("❌ No music tracks found in music_input/ folder")
             return {}
         
         print(f"   Found {len(music_tracks)} music tracks")
@@ -117,39 +113,39 @@ class BatchVideoGenerator:
         generated_videos = {}
         
         for i, music_track in enumerate(music_tracks, 1):
-            print(f"\n[{i}/{len(music_tracks)}] Processing: {music_track.filename}")
+            print(f"\n[{i}/{len(music_tracks)}] Processing: {music_track['filename']}")
             
             try:
                 # Enhanced: Use unified audio-visual analysis
                 output_path = self._create_enhanced_video(music_track, video_files)
                 
                 if output_path:
-                    generated_videos[music_track.filename] = output_path
+                    generated_videos[music_track['filename']] = output_path
                     print(f"   ✅ Full-length video created: {Path(output_path).name}")
                     
                     # Log video generation result
                     if self.llm_logger:
                         self.llm_logger.log_video_generation_result(
-                            music_track.filename, output_path, None, success=True
+                            music_track['filename'], output_path, None, success=True
                         )
                 else:
-                    print(f"   ❌ Failed to create video for {music_track.filename}")
+                    print(f"   ❌ Failed to create video for {music_track['filename']}")
                     
                     # Log failure
                     if self.llm_logger:
                         self.llm_logger.log_video_generation_result(
-                            music_track.filename, "", None, success=False, 
+                            music_track['filename'], "", None, success=False, 
                             error_message="Video creation failed"
                         )
                     
             except Exception as e:
-                logger.error(f"Error creating video for {music_track.filename}: {e}")
+                logger.error(f"Error creating video for {music_track['filename']}: {e}")
                 print(f"   ❌ Error: {e}")
                 
                 # Log error
                 if self.llm_logger:
                     self.llm_logger.log_video_generation_result(
-                        music_track.filename, "", None, success=False, 
+                        music_track['filename'], "", None, success=False, 
                         error_message=str(e)
                     )
             
@@ -190,6 +186,23 @@ class BatchVideoGenerator:
             print(f"\n📈 Total video content: {total_duration:.1f}s ({total_duration/60:.1f} minutes)")
         
         return generated_videos
+    
+    def _get_music_files(self, music_dir: str) -> List[Dict[str, str]]:
+        """Get list of music files from directory - simple version like test script."""
+        if not os.path.exists(music_dir):
+            return []
+        
+        music_extensions = ['.mp3', '.m4a', '.wav', '.flac', '.ogg', '.MP3', '.M4A', '.WAV']
+        music_files = []
+        
+        for file_path in Path(music_dir).iterdir():
+            if file_path.is_file() and file_path.suffix in music_extensions:
+                music_files.append({
+                    'filename': file_path.name,
+                    'file_path': str(file_path)
+                })
+        
+        return music_files
     
     def _get_video_files(self, video_dir: str) -> List[str]:
         """Get list of video files from directory."""
@@ -279,9 +292,9 @@ class BatchVideoGenerator:
             # STEP 1: Multimodal Analysis
             print(f"   📊 Step 1: Multimodal Analysis...")
             multimodal_result = self.multimodal_analyzer.analyze_batch(
-                audio_path=music_track.file_path,
+                audio_path=music_track['file_path'],
                 video_paths=test_video_files,
-                test_name=f"Music Video: {music_track.filename}"
+                test_name=f"Music Video: {music_track['filename']}"
             )
             
             if not multimodal_result:
@@ -335,11 +348,11 @@ class BatchVideoGenerator:
                         break
             
             # Create video using two-step pipeline method
-            music_stem = Path(music_track.filename).stem
+            music_stem = Path(music_track['filename']).stem
             final_video = self.video_editor.create_from_instructions(
                 instructions=editing_instructions,
                 music_name=music_stem,
-                music_path=music_track.file_path
+                music_path=music_track['file_path']
             )
             
             print(f"   ✅ Step 3 complete: Two-step pipeline video created!")

@@ -82,3 +82,10 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Temporary files and reports
+generation_report.json
+temp-audio.m4a
+temp-*.m4a
+two_step_pipeline_results_*.json
+*_results_*.json
