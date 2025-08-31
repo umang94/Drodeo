@@ -22,11 +22,11 @@ load_dotenv(override=True)
 # Add src to path for imports
 sys.path.append('src')
 
-from src.core.music_analyzer import MusicInputManager, AudioDrivenCreativeDirector
-from src.core.llm_video_analyzer import LLMVideoAnalyzer
+from src.core.music_analyzer import MusicInputManager
+from src.core.gemini_multimodal_analyzer import GeminiMultimodalAnalyzer
+from src.core.gemini_self_translator import GeminiSelfTranslator
 from src.editing.video_editor import VideoEditor
-from src.core.video_processor import VideoProcessor
-from src.utils.llm_logger import LLMResponseLogger, create_session_logger
+from src.utils.llm_logger import create_session_logger
 
 logger = logging.getLogger(__name__)
 
@@ -53,18 +53,16 @@ class BatchVideoGenerator:
         # Initialize components with logging
         self.music_manager = MusicInputManager()
         
-        # Initialize LLM analyzer only if enabled and API key available
-        if self.enable_llm and os.getenv('OPENAI_API_KEY'):
-            self.video_analyzer = LLMVideoAnalyzer(llm_logger=self.llm_logger)
-            llm_status = "✅"
+        # Initialize Gemini multimodal analyzer only if enabled and API key available
+        if self.enable_llm and os.getenv('GEMINI_API_KEY'):
+            self.multimodal_analyzer = GeminiMultimodalAnalyzer()
+            llm_status = "✅ Gemini Multimodal"
         else:
-            self.video_analyzer = None
-            llm_status = "❌ (No API key or disabled)"
+            self.multimodal_analyzer = None
+            llm_status = "❌ (No Gemini API key or disabled)"
             if self.enable_llm:
-                print("⚠️  LLM analysis disabled: No OPENAI_API_KEY found")
+                print("⚠️  Gemini multimodal analysis disabled: No GEMINI_API_KEY found")
         
-        self.creative_director = AudioDrivenCreativeDirector()
-        self.video_processor = VideoProcessor()
         self.video_editor = VideoEditor()
         
         print("🚀 Enhanced Batch Video Generator initialized")
@@ -84,7 +82,7 @@ class BatchVideoGenerator:
         print("🎬 Starting ENHANCED batch video generation...")
         print("   🎵 Full-length videos (no duration limits)")
         print("   🎯 Beat-synchronized transitions")
-        print(f"   🤖 LLM audio-visual analysis: {'✅' if self.video_analyzer else '❌'}")
+        print(f"   🤖 Gemini multimodal analysis: {'✅' if self.multimodal_analyzer else '❌'}")
         print(f"   💾 Cache: {'✅' if self.use_cache else '❌ (disabled)'}")
         
         # Step 1: Scan music tracks
@@ -264,10 +262,9 @@ class BatchVideoGenerator:
             return ['happy', 'cinematic']
     
     def _create_enhanced_video(self, music_track, video_files: List[str]) -> str:
-        """Create enhanced full-length video using audio-visual analysis."""
+        """Create enhanced full-length video using two-step Gemini pipeline."""
         try:
-            cache_status = "enabled" if self.use_cache else "disabled"
-            print(f"   🎵🎬 Starting enhanced audio-visual analysis (cache {cache_status})...")
+            print(f"   🎵🎬 Starting TWO-STEP GEMINI PIPELINE...")
             
             # Step 1: Limit videos for fast testing
             test_video_files = video_files
@@ -275,105 +272,82 @@ class BatchVideoGenerator:
                 test_video_files = video_files[:3]  # Use only first 3 videos for fast testing
                 print(f"      🚀 Fast test mode: Using only {len(test_video_files)} videos")
             
-            # Step 2: Perform unified audio-visual analysis (if LLM available)
-            sync_plan = None
-            if self.video_analyzer:
-                sync_plan = self.video_analyzer.analyze_audio_visual_unified(
-                    audio_path=music_track.file_path,
-                    video_paths=test_video_files,
-                    use_dev_versions=self.use_dev_videos,
-                    use_cache=self.use_cache
-                )
-                
-                if sync_plan:
-                    print(f"   ✅ Sync plan generated:")
-                    print(f"      Duration: {sync_plan.music_duration:.1f}s")
-                    print(f"      Transitions: {len(sync_plan.transition_points)}")
-                    print(f"      Confidence: {sync_plan.sync_confidence:.2f}")
-                else:
-                    print(f"   ⚠️  LLM audio-visual analysis failed, using fallback method...")
-            else:
-                print(f"   ⚠️  LLM analysis not available, using fallback method...")
+            # Check if two-step pipeline is available
+            if not self.multimodal_analyzer:
+                raise ValueError("Two-step pipeline not available: No GEMINI_API_KEY found")
             
-            # Step 2: Process videos to get clips
-            cache_msg = "cached" if self.use_cache else "fresh analysis"
-            print(f"   📹 Processing video clips ({cache_msg})...")
-            all_clips = []
+            # STEP 1: Multimodal Analysis
+            print(f"   📊 Step 1: Multimodal Analysis...")
+            multimodal_result = self.multimodal_analyzer.analyze_batch(
+                audio_path=music_track.file_path,
+                video_paths=test_video_files,
+                test_name=f"Music Video: {music_track.filename}"
+            )
             
-            for video_file in video_files[:6]:  # Use up to 6 videos
+            if not multimodal_result:
+                raise ValueError("Multimodal analysis failed - no result returned")
+            
+            print(f"   ✅ Step 1 complete:")
+            print(f"      Duration: {multimodal_result.audio_duration:.1f}s")
+            print(f"      Tempo: {multimodal_result.audio_tempo:.1f} BPM")
+            print(f"      Sync confidence: {multimodal_result.sync_confidence:.2f}")
+            
+            # STEP 2: Self-Translation with Video Duration Information
+            print(f"   🤖 Step 2: Self-Translation with video duration validation...")
+            translator = GeminiSelfTranslator()
+            
+            # CRITICAL FIX: Get actual video durations for validation
+            video_durations = {}
+            for video_path in test_video_files:
                 try:
-                    clips, keyframes = self.video_processor.process_video(
-                        video_file, use_cache=self.use_cache, use_ai=self.enable_llm
-                    )
-                    all_clips.extend(clips[:3])  # Use up to 3 clips per video
-                    print(f"      📹 {Path(video_file).name}: {len(clips)} clips ({cache_msg})")
+                    from moviepy.editor import VideoFileClip
+                    temp_clip = VideoFileClip(video_path)
+                    video_durations[os.path.basename(video_path)] = temp_clip.duration
+                    temp_clip.close()
+                    print(f"      📹 {os.path.basename(video_path)}: {video_durations[os.path.basename(video_path)]:.1f}s")
                 except Exception as e:
-                    logger.warning(f"Failed to process {video_file}: {e}")
+                    logger.warning(f"Failed to get duration for {video_path}: {e}")
+                    video_durations[os.path.basename(video_path)] = 60.0  # Fallback duration
             
-            if not all_clips:
-                print(f"      ❌ No clips extracted from videos")
-                return None
+            available_video_names = [os.path.basename(path) for path in test_video_files]
+            editing_instructions = translator.translate_timeline(
+                gemini_reasoning=multimodal_result.gemini_reasoning,
+                audio_duration=multimodal_result.audio_duration,
+                available_videos=available_video_names,
+                video_durations=video_durations  # Pass actual durations
+            )
             
-            print(f"      📊 Total clips available: {len(all_clips)}")
+            print(f"   ✅ Step 2 complete:")
+            print(f"      Clips generated: {len(editing_instructions.clips)}")
+            print(f"      Transitions: {len(editing_instructions.transitions)}")
+            print(f"      Translation confidence: {editing_instructions.metadata.get('confidence', 'N/A')}")
             
-            # Step 3: Create full-length video using sync plan
+            # STEP 3: Direct Video Creation
+            print(f"   🎬 Step 3: Direct Video Creation...")
+            
+            # Update video paths in instructions to full paths
+            for clip_data in editing_instructions.clips:
+                video_name = clip_data['video_path']
+                # Find full path for this video name
+                for full_path in test_video_files:
+                    if os.path.basename(full_path) == video_name:
+                        clip_data['video_path'] = full_path
+                        break
+            
+            # Create video using two-step pipeline method
             music_stem = Path(music_track.filename).stem
-            
-            final_video = self.video_editor.create_music_driven_video(
-                clips=all_clips,
+            final_video = self.video_editor.create_from_instructions(
+                instructions=editing_instructions,
                 music_name=music_stem,
-                sync_plan=sync_plan,  # Use sync plan for full-length generation
                 music_path=music_track.file_path
             )
             
+            print(f"   ✅ Step 3 complete: Two-step pipeline video created!")
             return final_video
             
         except Exception as e:
-            logger.error(f"Error creating enhanced video: {e}")
-            print(f"   ⚠️  Enhanced creation failed, trying fallback...")
-            return self._create_fallback_video(music_track, video_files)
-    
-    def _create_fallback_video(self, music_track, video_files: List[str]) -> str:
-        """Create video using fallback method (traditional approach)."""
-        try:
-            cache_status = "enabled" if self.use_cache else "disabled"
-            print(f"   📹 Creating fallback video (cache {cache_status})...")
-            
-            # Process videos to get clips
-            all_clips = []
-            cache_msg = "cached" if self.use_cache else "fresh analysis"
-            
-            for video_file in video_files[:6]:  # Use up to 6 videos
-                try:
-                    clips, keyframes = self.video_processor.process_video(
-                        video_file, use_cache=self.use_cache, use_ai=self.enable_llm
-                    )
-                    all_clips.extend(clips[:3])  # Use up to 3 clips per video
-                    print(f"      📹 {Path(video_file).name}: {len(clips)} clips ({cache_msg})")
-                except Exception as e:
-                    logger.warning(f"Failed to process {video_file}: {e}")
-            
-            if not all_clips:
-                print(f"      ❌ No clips extracted from videos")
-                return None
-            
-            print(f"      📊 Total clips available: {len(all_clips)}")
-            
-            # Create video using traditional method (no sync plan)
-            music_stem = Path(music_track.filename).stem
-            
-            final_video = self.video_editor.create_music_driven_video(
-                clips=all_clips,
-                music_name=music_stem,
-                sync_plan=None,  # No sync plan - will use fallback method
-                music_path=music_track.file_path
-            )
-            
-            return final_video
-            
-        except Exception as e:
-            logger.error(f"Error creating fallback video: {e}")
-            return None
+            logger.error(f"Error in two-step pipeline: {e}")
+            raise
     
     def save_generation_report(self, generated_videos: Dict[str, str], 
                              report_file: str = "generation_report.json"):
