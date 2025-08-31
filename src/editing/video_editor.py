@@ -22,7 +22,22 @@ import numpy as np
 from tqdm import tqdm
 
 from src.utils.config import VIDEO_CONFIG
-from src.core.video_processor import VideoClip
+
+# Define VideoClip dataclass locally since video_processor was removed
+@dataclass
+class VideoClip:
+    """Video clip information for editing"""
+    file_path: str
+    start_time: float
+    end_time: float
+    quality_score: float
+    theme_scores: Dict[str, float]
+    ai_description: str
+    
+    @property
+    def duration(self) -> float:
+        """Get clip duration"""
+        return self.end_time - self.start_time
 
 # Import multimodal analysis result and self-translation instructions
 try:
