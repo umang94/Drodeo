@@ -1233,6 +1233,14 @@ class VideoEditor:
             print(f"      🔗 Concatenating {len(loaded_clips)} clips...")
             final_video = concatenate_videoclips(loaded_clips, method="compose")
         
+        # CRITICAL FIX: Trim to target duration to prevent excessive video length
+        target_duration = instructions.output_settings.get('target_duration')
+        if target_duration and final_video.duration > target_duration:
+            print(f"      ✂️  Trimming from {final_video.duration:.1f}s to {target_duration:.1f}s")
+            trimmed_video = final_video.subclip(0, target_duration)
+            final_video.close()
+            final_video = trimmed_video
+        
         # Clean up loaded clips
         for clip in loaded_clips:
             clip.close()

@@ -217,6 +217,8 @@ Convert the creative timeline above into precise JSON editing instructions. Foll
 4. **No Gaps:** Ensure transitions connect clips seamlessly
 5. **Energy Matching:** Map creative descriptions to energy levels
 6. **MoviePy Compatible:** All parameters must work with MoviePy 1.0.3
+7. **EFFICIENT CLIP COUNT:** Generate 4-8 clips maximum for optimal performance
+8. **AVOID EXCESSIVE CLIPS:** Do not create more clips than necessary - longer clips are better than many short clips
 
 **PARAMETER GUIDELINES:**
 
