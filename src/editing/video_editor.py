@@ -265,7 +265,7 @@ class VideoEditor:
     
     def _add_music_overlay(self, video: VideoFileClip, music_path: str) -> VideoFileClip:
         """
-        Add background music to a video with robust error handling
+        Add background music to a video using the simplest possible approach to avoid FFmpeg issues
         
         Args:
             video: Video clip to add music to
@@ -273,101 +273,59 @@ class VideoEditor:
             
         Returns:
             Video with music overlay
+            
+        Raises:
+            Exception: If audio processing fails (no fallbacks)
         """
-        try:
-            # Validate music file exists
-            if not os.path.exists(music_path):
-                logger.warning(f"Music file not found: {music_path}")
-                return video
-            
-            # Load audio with comprehensive error handling
-            try:
-                audio = AudioFileClip(music_path)
-            except Exception as e:
-                logger.warning(f"Failed to load audio file {music_path}: {e}")
-                return video
-            
-            # Validate audio loaded successfully
-            if audio is None:
-                logger.warning(f"Audio file loaded as None: {music_path}")
-                return video
-            
-            # Check audio duration
-            try:
-                audio_duration = audio.duration
-                if audio_duration is None or audio_duration <= 0:
-                    logger.warning(f"Invalid audio duration: {audio_duration}")
-                    audio.close()
-                    return video
-            except Exception as e:
-                logger.warning(f"Failed to get audio duration: {e}")
-                audio.close()
-                return video
-            
-            # Trim or loop audio to match video duration
-            try:
-                if audio_duration > video.duration:
-                    # Audio is longer, trim it
-                    audio = audio.subclip(0, video.duration)
-                elif audio_duration < video.duration:
-                    # Audio is shorter, loop it
-                    loops_needed = int(np.ceil(video.duration / audio_duration))
-                    if loops_needed > 1:
-                        audio_clips = [audio] * loops_needed
-                        audio = concatenate_audioclips(audio_clips)
-                        audio = audio.subclip(0, video.duration)
-                
-                # Set music volume to 70% for better audibility
-                audio = audio.volumex(0.7)
-                
-            except Exception as e:
-                logger.warning(f"Failed to process audio duration: {e}")
-                audio.close()
-                return video
-            
-            # Handle original video audio with better error handling
-            try:
-                if video.audio is not None:
-                    try:
-                        # Test if original audio is accessible
-                        _ = video.audio.duration
-                        
-                        # Mix original audio with background music
-                        original_audio = video.audio.volumex(0.3)  # Lower original audio
-                        final_audio = CompositeAudioClip([original_audio, audio])
-                    except Exception as e:
-                        logger.warning(f"Failed to mix with original audio, using music only: {e}")
-                        final_audio = audio
-                else:
-                    # Use only background music
-                    final_audio = audio
-                
-                # Create video with new audio - remove original audio first to avoid conflicts
-                video_no_audio = video.without_audio()
-                video_with_audio = video_no_audio.set_audio(final_audio)
-                
-                # Clean up
-                audio.close()
-                
-                return video_with_audio
-                
-            except Exception as e:
-                logger.warning(f"Failed to set audio to video: {e}")
-                audio.close()
-                return video
-            
-        except Exception as e:
-            logger.warning(f"Failed to add music overlay: {str(e)}")
-            return video  # Return original video if music fails
+        # Validate music file exists
+        if not os.path.exists(music_path):
+            raise FileNotFoundError(f"Music file not found: {music_path}")
+        
+        print(f"   🎵 Loading music file: {os.path.basename(music_path)}")
+        
+        # Load audio file
+        audio = AudioFileClip(music_path)
+        if audio is None:
+            raise ValueError(f"Failed to load audio file: {music_path}")
+        
+        # Validate audio properties
+        audio_duration = audio.duration
+        if audio_duration is None or audio_duration <= 0:
+            audio.close()
+            raise ValueError(f"Invalid audio duration ({audio_duration}s) for: {music_path}")
+        
+        print(f"   🎵 Music duration: {audio_duration:.1f}s, Video duration: {video.duration:.1f}s")
+        
+        # CRITICAL FIX: Use the simplest possible approach - no audio processing at all
+        # Just use the raw audio file directly, let MoviePy handle duration during rendering
+        print(f"   🎵 Using raw audio file directly (no processing to avoid FFmpeg issues)")
+        
+        if video.audio is not None:
+            print(f"   🎵 Video has original audio - replacing with background music only")
+        else:
+            print(f"   🎵 No original audio found, using background music only")
+        
+        # Create video with new audio - use the raw audio without any processing
+        print(f"   🎬 Applying raw audio to video")
+        video_no_audio = video.without_audio()
+        video_with_audio = video_no_audio.set_audio(audio)
+        
+        # Don't close audio here since it's now part of the video
+        
+        print(f"   ✅ Audio overlay completed successfully")
+        return video_with_audio
     
     def _render_video(self, video: VideoFileClip, output_path: str, music_name: str):
         """
-        Render video to file with robust error handling
+        Render video to file with simplified error handling
         
         Args:
             video: Video to render
             output_path: Output file path
             music_name: Music name for progress display
+            
+        Raises:
+            Exception: If rendering fails (no fallbacks)
         """
         # Get video properties
         duration = video.duration
@@ -379,83 +337,42 @@ class VideoEditor:
         print(f"      FPS: {fps}")
         print(f"      Resolution: {resolution[0]}x{resolution[1]}")
         
-        try:
-            # Check if video has audio and handle accordingly
-            has_audio = video.audio is not None
-            print(f"      Audio: {'Yes' if has_audio else 'No'}")
-            
-            if has_audio:
-                # Try rendering with audio first
-                try:
-                    print("   🎵 Rendering with audio...")
-                    video.write_videofile(
-                        output_path,
-                        fps=min(fps, 30),  # Cap at 30fps for smaller files
-                        codec='libx264',
-                        audio_codec='aac',
-                        temp_audiofile='temp-audio.m4a',
-                        remove_temp=True,
-                        verbose=False,
-                        logger=None  # Disable MoviePy's verbose logging
-                    )
-                    print("   ✅ Video rendered successfully with audio")
-                    return
-                    
-                except Exception as audio_error:
-                    logger.warning(f"Audio rendering failed: {audio_error}")
-                    print("   ⚠️  Audio rendering failed, trying without audio...")
-                    
-                    # Try rendering without audio as fallback
-                    try:
-                        video_no_audio = video.without_audio()
-                        video_no_audio.write_videofile(
-                            output_path,
-                            fps=min(fps, 30),
-                            codec='libx264',
-                            verbose=False,
-                            logger=None
-                        )
-                        video_no_audio.close()
-                        print("   ✅ Video rendered successfully without audio")
-                        return
-                        
-                    except Exception as no_audio_error:
-                        logger.error(f"Video rendering without audio also failed: {no_audio_error}")
-                        raise
-            else:
-                # No audio, render video only
-                print("   📹 Rendering video without audio...")
-                video.write_videofile(
-                    output_path,
-                    fps=min(fps, 30),
-                    codec='libx264',
-                    verbose=False,
-                    logger=None
-                )
-                print("   ✅ Video rendered successfully")
-            
-        except Exception as e:
-            logger.error(f"Rendering failed: {str(e)}")
-            
-            # Final fallback: try with minimal settings
+        # Check if video has audio
+        has_audio = video.audio is not None
+        print(f"      Audio: {'Yes' if has_audio else 'No'}")
+        
+        # Validate audio if present
+        if has_audio:
             try:
-                print("   🔧 Trying fallback rendering with minimal settings...")
-                video_fallback = video.without_audio() if video.audio else video
-                video_fallback.write_videofile(
-                    output_path,
-                    fps=24,  # Lower FPS
-                    codec='libx264',
-                    preset='ultrafast',  # Fastest encoding
-                    verbose=False,
-                    logger=None
-                )
-                if video_fallback != video:
-                    video_fallback.close()
-                print("   ✅ Fallback rendering successful")
-                
-            except Exception as fallback_error:
-                logger.error(f"Fallback rendering also failed: {fallback_error}")
-                raise Exception(f"All rendering attempts failed. Last error: {fallback_error}")
+                audio_duration = video.audio.duration
+                print(f"      Audio duration: {audio_duration:.1f}s")
+            except Exception as e:
+                raise RuntimeError(f"Video has audio but it's not accessible: {e}")
+        
+        # Render video with appropriate settings
+        if has_audio:
+            print("   🎵 Rendering with audio...")
+            video.write_videofile(
+                output_path,
+                fps=min(fps, 30),  # Cap at 30fps for smaller files
+                codec='libx264',
+                audio_codec='aac',
+                temp_audiofile='temp-audio.m4a',
+                remove_temp=True,
+                verbose=False,
+                logger=None  # Disable MoviePy's verbose logging
+            )
+            print("   ✅ Video rendered successfully with audio")
+        else:
+            print("   📹 Rendering video without audio...")
+            video.write_videofile(
+                output_path,
+                fps=min(fps, 30),
+                codec='libx264',
+                verbose=False,
+                logger=None
+            )
+            print("   ✅ Video rendered successfully without audio")
     
     def _create_multimodal_video(self, multimodal_result: 'MultimodalAnalysisResult', music_name: str) -> VideoFileClip:
         """
@@ -606,9 +523,21 @@ class VideoEditor:
             print(f"         ⚠️  No segments created, using first clip as fallback")
             return loaded_clips[0].subclip(0, min(target_duration, loaded_clips[0].duration))
         
-        # Concatenate all segments
+        # Concatenate all segments with robust error handling
         print(f"      🔗 Concatenating {len(segments)} cross-video segments...")
-        final_video = concatenate_videoclips(segments, method="compose")
+        
+        # CRITICAL FIX: Validate all segments before concatenation
+        valid_segments = []
+        for i, segment in enumerate(segments):
+            if segment is not None and hasattr(segment, 'duration') and segment.duration > 0:
+                valid_segments.append(segment)
+            else:
+                logger.warning(f"Skipping invalid segment {i}: {segment}")
+        
+        if not valid_segments:
+            raise ValueError("No valid segments for concatenation")
+        
+        final_video = concatenate_videoclips(valid_segments, method="compose")
         
         # Trim to exact target duration if needed
         if final_video.duration > target_duration:
@@ -1353,70 +1282,57 @@ class VideoEditor:
     def _add_music_overlay_with_settings(self, video: VideoFileClip, music_path: str, 
                                         audio_sync: Dict) -> VideoFileClip:
         """
-        Add music overlay using JSON audio sync settings
+        Add music overlay using the simplest possible approach to avoid FFmpeg issues (ignoring JSON settings for now)
         
         Args:
             video: Video clip to add music to
             music_path: Path to music file
-            audio_sync: Audio synchronization settings from JSON
+            audio_sync: Audio synchronization settings from JSON (currently ignored to avoid FFmpeg issues)
             
         Returns:
             Video with music overlay
+            
+        Raises:
+            Exception: If audio processing fails (no fallbacks)
         """
-        try:
-            # Load audio
-            audio = AudioFileClip(music_path)
-            
-            # Apply JSON volume settings
-            music_volume = audio_sync.get('music_volume', 0.7)
-            original_audio_volume = audio_sync.get('original_audio_volume', 0.3)
-            
-            # Trim or loop audio to match video duration
-            if audio.duration > video.duration:
-                audio = audio.subclip(0, video.duration)
-            elif audio.duration < video.duration:
-                loops_needed = int(np.ceil(video.duration / audio.duration))
-                if loops_needed > 1:
-                    audio_clips = [audio] * loops_needed
-                    audio = concatenate_audioclips(audio_clips)
-                    audio = audio.subclip(0, video.duration)
-            
-            # Set music volume from JSON settings
-            audio = audio.volumex(music_volume)
-            
-            # Handle original video audio
-            if video.audio is not None:
-                try:
-                    # Mix original audio with background music using JSON settings
-                    original_audio = video.audio.volumex(original_audio_volume)
-                    final_audio = CompositeAudioClip([original_audio, audio])
-                except Exception as e:
-                    logger.warning(f"Failed to mix with original audio, using music only: {e}")
-                    final_audio = audio
-            else:
-                final_audio = audio
-            
-            # Apply fade settings from JSON
-            fade_in_duration = audio_sync.get('fade_in_duration', 0)
-            fade_out_duration = audio_sync.get('fade_out_duration', 0)
-            
-            if fade_in_duration > 0:
-                final_audio = final_audio.fx(audio_fadein, fade_in_duration)
-            if fade_out_duration > 0:
-                final_audio = final_audio.fx(audio_fadeout, fade_out_duration)
-            
-            # Create video with new audio
-            video_no_audio = video.without_audio()
-            video_with_audio = video_no_audio.set_audio(final_audio)
-            
-            # Clean up
+        # Validate music file exists
+        if not os.path.exists(music_path):
+            raise FileNotFoundError(f"Music file not found: {music_path}")
+        
+        print(f"   🎵 Loading music file with simplified approach: {os.path.basename(music_path)}")
+        print(f"   ⚠️  Note: Ignoring JSON audio settings to avoid FFmpeg subprocess issues")
+        
+        # Load audio file
+        audio = AudioFileClip(music_path)
+        if audio is None:
+            raise ValueError(f"Failed to load audio file: {music_path}")
+        
+        # Validate audio properties
+        audio_duration = audio.duration
+        if audio_duration is None or audio_duration <= 0:
             audio.close()
-            
-            return video_with_audio
-            
-        except Exception as e:
-            logger.warning(f"Failed to add music overlay with JSON settings: {str(e)}")
-            return video  # Return original video if music fails
+            raise ValueError(f"Invalid audio duration ({audio_duration}s) for: {music_path}")
+        
+        print(f"   🎵 Music duration: {audio_duration:.1f}s, Video duration: {video.duration:.1f}s")
+        
+        # CRITICAL FIX: Use the simplest possible approach - no audio processing at all
+        # Just use the raw audio file directly, let MoviePy handle duration during rendering
+        print(f"   🎵 Using raw audio file directly (no processing to avoid FFmpeg issues)")
+        
+        if video.audio is not None:
+            print(f"   🎵 Video has original audio - replacing with background music only")
+        else:
+            print(f"   🎵 No original audio found, using background music only")
+        
+        # Create video with new audio - use the raw audio without any processing
+        print(f"   🎬 Applying raw audio to video")
+        video_no_audio = video.without_audio()
+        video_with_audio = video_no_audio.set_audio(audio)
+        
+        # Don't close audio here since it's now part of the video
+        
+        print(f"   ✅ Audio overlay completed successfully (simplified approach)")
+        return video_with_audio
     
     def _render_video_with_settings(self, video: VideoFileClip, output_path: str, 
                                    music_name: str, output_settings: Dict):

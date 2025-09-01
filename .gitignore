@@ -45,11 +45,11 @@ uploads/*.mp4
 uploads/*.mov
 uploads/*.avi
 uploads/*.mkv
-input/*.mp4
+input/*
 input/*.mov
 input/*.avi
 input/*.mkv
-input_dev/*.mp4
+input_dev/*
 input_dev/*.MP4
 input_dev/*.mov
 input_dev/*.avi

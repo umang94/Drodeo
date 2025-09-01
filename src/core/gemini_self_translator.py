@@ -56,8 +56,8 @@ class GeminiSelfTranslator:
         
         logger.info("🤖 GeminiSelfTranslator initialized successfully")
     
-    def translate_timeline(self, gemini_reasoning: str, audio_duration: float, 
-                          available_videos: List[str], video_durations: Optional[Dict[str, float]] = None) -> EditingInstructions:
+    def translate_timeline(self, gemini_reasoning: str, audio_duration: Optional[float] = None, 
+                          available_videos: List[str] = None, video_durations: Optional[Dict[str, float]] = None) -> EditingInstructions:
         """
         Translate Gemini's creative timeline into structured JSON editing instructions
         
@@ -73,8 +73,11 @@ class GeminiSelfTranslator:
         start_time = time.time()
         
         logger.info("🤖 Starting Gemini self-translation...")
-        logger.info(f"   📊 Audio duration: {audio_duration:.1f}s")
-        logger.info(f"   📹 Available videos: {len(available_videos)}")
+        if audio_duration is not None:
+            logger.info(f"   📊 Audio duration: {audio_duration:.1f}s")
+        else:
+            logger.info("   📊 Audio duration: None (will extract from reasoning)")
+        logger.info(f"   📹 Available videos: {len(available_videos) if available_videos else 0}")
         
         try:
             # Create self-translation prompt
@@ -149,20 +152,41 @@ class GeminiSelfTranslator:
 - Always respect these duration limits to prevent "T_Start should be smaller than clip's duration" errors
 """
         
+        # Handle case where audio_duration is None (extract from reasoning)
+        duration_instruction = ""
+        target_duration_for_output = "EXTRACT_FROM_REASONING"
+        
+        if audio_duration is None:
+            duration_instruction = """
+**CRITICAL:** The audio duration is not provided. You MUST extract the actual audio duration from the creative timeline analysis above and use that as the target duration."""
+            target_duration_for_output = "EXTRACT_FROM_REASONING"
+        else:
+            duration_instruction = f"- Target video duration: {audio_duration} seconds"
+            target_duration_for_output = audio_duration
+
         prompt = f"""You are a professional video editing assistant. Your task is to convert a creative video timeline into precise JSON editing instructions for MoviePy video editing software.
 
 **ORIGINAL CREATIVE TIMELINE:**
 {gemini_reasoning}
 
 **TECHNICAL CONSTRAINTS:**
-- Target video duration: {audio_duration} seconds
+{duration_instruction}
 - Available video files: {available_videos_str}
 - Video editing software: MoviePy 1.0.3
 - Required output format: Structured JSON
 {video_info_str}
 
 **YOUR TASK:**
-Convert the creative timeline above into precise JSON editing instructions. Follow this exact structure:
+Convert the creative timeline above into precise JSON editing instructions. 
+
+**STEP 1: EXTRACT AUDIO INFORMATION**
+From the creative timeline above, identify:
+- Actual audio duration in seconds
+- Audio tempo/BPM if mentioned
+- Musical structure and timing
+
+**STEP 2: CREATE JSON STRUCTURE**
+Follow this exact structure:
 
 ```json
 {{
@@ -194,7 +218,7 @@ Convert the creative timeline above into precise JSON editing instructions. Foll
       "fade_out_duration": 1.0
     }},
     "output_settings": {{
-      "target_duration": {audio_duration},
+      "target_duration": {target_duration_for_output},
       "fps": 30,
       "resolution": [1920, 1080],
       "codec": "libx264",
@@ -213,7 +237,7 @@ Convert the creative timeline above into precise JSON editing instructions. Foll
 
 1. **Exact Video Paths:** Use only filenames from the available_videos list
 2. **Precise Timestamps:** All times in seconds (float format)
-3. **Complete Coverage:** Clips must cover the full {audio_duration} seconds
+3. **Complete Coverage:** Clips must cover the full target duration (extract from reasoning above)
 4. **No Gaps:** Ensure transitions connect clips seamlessly
 5. **Energy Matching:** Map creative descriptions to energy levels
 6. **MoviePy Compatible:** All parameters must work with MoviePy 1.0.3
@@ -320,19 +344,24 @@ Return ONLY the JSON structure. No additional text or explanation."""
             logger.error(f"❌ Response parsing failed: {str(e)}")
             raise ValueError(f"Failed to parse Gemini response: {str(e)}")
     
-    def _create_fallback_instructions(self, audio_duration: float, 
+    def _create_fallback_instructions(self, audio_duration: Optional[float], 
                                      available_videos: List[str]) -> EditingInstructions:
         """
         Create fallback editing instructions when self-translation fails
         
         Args:
-            audio_duration: Target duration in seconds
+            audio_duration: Target duration in seconds (can be None)
             available_videos: List of available video filenames
             
         Returns:
             Basic EditingInstructions for fallback processing
         """
         logger.warning("🔧 Creating fallback editing instructions...")
+        
+        # Handle case where audio_duration is None
+        if audio_duration is None:
+            audio_duration = 120.0  # Default fallback duration
+            logger.warning(f"   ⚠️  Audio duration is None, using fallback: {audio_duration}s")
         
         # Create simple clips using available videos
         clips = []

@@ -83,7 +83,7 @@ class BatchVideoGenerator:
         
         # Step 1: Scan music tracks
         print("\n📊 Step 1: Scanning music tracks...")
-        music_tracks = self._get_music_files("music_input")
+        music_tracks = self._get_music_files("music")
         
         if not music_tracks:
             print("❌ No music tracks found in music_input/ folder")
@@ -325,7 +325,7 @@ class BatchVideoGenerator:
             available_video_names = [os.path.basename(path) for path in test_video_files]
             editing_instructions = translator.translate_timeline(
                 gemini_reasoning=multimodal_result.gemini_reasoning,
-                audio_duration=multimodal_result.audio_duration,
+                audio_duration=None,  # Let self-translator extract from natural language
                 available_videos=available_video_names,
                 video_durations=video_durations  # Pass actual durations
             )

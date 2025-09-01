@@ -333,338 +333,59 @@ Then provide the complete multimodal analysis with precise timestamps based on y
     
     def _parse_multimodal_response(self, response_text: str, audio_path: str, 
                                   uploaded_videos: List[Dict]) -> Optional[MultimodalAnalysisResult]:
-        """Parse Gemini's multimodal response into structured results"""
+        """
+        NO REGEX PARSING - Store raw response for self-translation
+        
+        ARCHITECTURAL TENET: This method no longer parses natural language with regex.
+        Instead, it extracts only basic metadata and stores the complete response
+        for Gemini's self-translation in Step 2.
+        """
         try:
-            # Extract basic audio information (estimated from response)
-            audio_duration = self._extract_audio_duration(response_text)
-            audio_tempo = self._extract_audio_tempo(response_text)
+            # Extract only basic audio information using simple patterns (not complex parsing)
+            audio_duration = self._extract_basic_audio_duration(response_text)
+            audio_tempo = self._extract_basic_audio_tempo(response_text)
             
-            # Extract clip selections
-            clip_selections = self._extract_clip_selections(response_text, uploaded_videos)
-            
-            # Extract sequencing plan
-            sequencing_plan = self._extract_sequencing_plan(response_text, uploaded_videos)
-            
-            # Extract cross-video transitions
-            cross_video_transitions = self._extract_cross_video_transitions(response_text)
-            
-            # Extract energy matching
-            energy_matching = self._extract_energy_matching(response_text, uploaded_videos)
-            
-            # Extract sync confidence
-            sync_confidence = self._extract_sync_confidence(response_text)
-            
+            # NO REGEX PARSING - Return raw response for self-translation
             return MultimodalAnalysisResult(
                 audio_path=audio_path,
                 video_paths=[v['path'] for v in uploaded_videos],
                 audio_duration=audio_duration,
                 audio_tempo=audio_tempo,
-                clip_selections=clip_selections,
-                sequencing_plan=sequencing_plan,
-                cross_video_transitions=cross_video_transitions,
-                energy_matching=energy_matching,
-                sync_confidence=sync_confidence,
-                gemini_reasoning=response_text[:2000],  # Store first 2000 chars
+                clip_selections=[],  # Empty - will be filled by self-translator
+                sequencing_plan=[],  # Empty - will be filled by self-translator
+                cross_video_transitions=[],  # Empty - will be filled by self-translator
+                energy_matching={},  # Empty - will be filled by self-translator
+                sync_confidence=0.85,  # Default confidence
+                gemini_reasoning=response_text,  # FULL response for self-translation
                 processing_time=0.0  # Will be set by caller
             )
             
         except Exception as e:
-            print(f"         ❌ Error parsing multimodal response: {e}")
-            logger.error(f"Error parsing multimodal response: {e}")
+            print(f"         ❌ Error processing multimodal response: {e}")
+            logger.error(f"Error processing multimodal response: {e}")
             return None
     
-    def _extract_audio_duration(self, text: str) -> float:
-        """Extract audio duration from response (estimated)"""
-        import re
+    def _extract_basic_audio_duration(self, text: str) -> float:
+        """
+        NO REGEX EXTRACTION - Return default for self-translation
         
-        # Look for duration patterns
-        patterns = [
-            r'duration[:\s]+(\d+\.?\d*)\s*(?:seconds?|s)',
-            r'(\d+\.?\d*)\s*(?:seconds?|s)\s*(?:long|duration)',
-            r'track.*?(\d+\.?\d*)\s*(?:seconds?|s)'
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, text.lower())
-            if matches:
-                try:
-                    return float(matches[0])
-                except:
-                    continue
-        
-        return 120.0  # Default duration
+        ARCHITECTURAL TENET: No regex parsing of natural language responses.
+        The self-translator will extract all structured data in Step 2.
+        """
+        return 120.0  # Default duration - actual value extracted by self-translator
     
-    def _extract_audio_tempo(self, text: str) -> float:
-        """Extract audio tempo from response"""
-        import re
+    def _extract_basic_audio_tempo(self, text: str) -> float:
+        """
+        NO REGEX EXTRACTION - Return default for self-translation
         
-        # Look for BPM patterns
-        patterns = [
-            r'(\d+\.?\d*)\s*bpm',
-            r'tempo[:\s]+(\d+\.?\d*)',
-            r'(\d+\.?\d*)\s*beats?\s*per\s*minute'
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, text.lower())
-            if matches:
-                try:
-                    return float(matches[0])
-                except:
-                    continue
-        
-        return 120.0  # Default tempo
+        ARCHITECTURAL TENET: No regex parsing of natural language responses.
+        The self-translator will extract all structured data in Step 2.
+        """
+        return 120.0  # Default tempo - actual value extracted by self-translator
     
-    def _extract_clip_selections(self, text: str, uploaded_videos: List[Dict]) -> List[Dict]:
-        """Extract clip selections from response with improved parsing for all video sources"""
-        import re
-        
-        clip_selections = []
-        
-        print(f"         🔍 Parsing clips from {len(uploaded_videos)} video sources...")
-        
-        # Create mapping of video names for easier matching
-        video_name_map = {}
-        for video_info in uploaded_videos:
-            full_name = video_info['name']
-            base_name = full_name.replace('.MP4', '').replace('.mov', '').replace('.mp4', '').replace('_dev', '')
-            video_name_map[full_name] = video_info
-            video_name_map[base_name] = video_info
-            print(f"            📹 Looking for clips from: {full_name}")
-        
-        # Enhanced patterns to match Gemini's response format
-        # Pattern 1: "**Video Source:** VideoName.ext" followed by "**Timestamp:** X:XX-X:XX"
-        video_timestamp_pattern = r'\*\*Video\s+Source:\*\*\s*([^\n\*]+).*?\*\*Timestamp:\*\*\s*(\d+):(\d+)-(\d+):(\d+)'
-        matches = re.findall(video_timestamp_pattern, text, re.IGNORECASE | re.DOTALL)
-        
-        for match in matches:
-            video_ref, start_min, start_sec, end_min, end_sec = match
-            video_ref = video_ref.strip()
-            
-            # Find matching video
-            matched_video = None
-            for name_key, video_info in video_name_map.items():
-                if name_key.lower() in video_ref.lower() or video_ref.lower() in name_key.lower():
-                    matched_video = video_info
-                    break
-            
-            if matched_video:
-                try:
-                    start_time = int(start_min) * 60 + int(start_sec)
-                    end_time = int(end_min) * 60 + int(end_sec)
-                    
-                    if start_time < end_time and end_time - start_time >= 1:
-                        clip_selections.append({
-                            'video': matched_video['name'],
-                            'video_path': matched_video['path'],
-                            'start_time': start_time,
-                            'end_time': end_time,
-                            'duration': end_time - start_time,
-                            'energy_level': 'high'
-                        })
-                        print(f"            ✅ Found clip: {matched_video['name']} ({start_time}s-{end_time}s)")
-                except (ValueError, IndexError):
-                    continue
-        
-        # Pattern 2: Look for video names followed by timestamps in bullet points
-        # Example: "DJI_0110_dev.MP4: 0:01-0:15" or "IMG_7840_dev.mov: 0:25-0:49"
-        for video_info in uploaded_videos:
-            video_name = video_info['name']
-            base_name = video_name.replace('.MP4', '').replace('.mov', '').replace('.mp4', '')
-            
-            # Multiple patterns for this video
-            patterns = [
-                # Pattern: VideoName: timestamp-timestamp
-                rf'{re.escape(video_name)}[:\s]*(\d+):(\d+)-(\d+):(\d+)',
-                rf'{re.escape(base_name)}[:\s]*(\d+):(\d+)-(\d+):(\d+)',
-                # Pattern: VideoName followed by timestamp on next line
-                rf'{re.escape(video_name)}.*?(\d+):(\d+)-(\d+):(\d+)',
-                rf'{re.escape(base_name)}.*?(\d+):(\d+)-(\d+):(\d+)',
-            ]
-            
-            for pattern in patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                
-                for match in matches:
-                    try:
-                        start_min, start_sec, end_min, end_sec = match
-                        start_time = int(start_min) * 60 + int(start_sec)
-                        end_time = int(end_min) * 60 + int(end_sec)
-                        
-                        if start_time < end_time and end_time - start_time >= 1:
-                            # Clamp to reasonable bounds
-                            max_duration = 60.0
-                            start_time = max(0, min(start_time, max_duration - 2))
-                            end_time = max(start_time + 1, min(end_time, max_duration))
-                            
-                            clip_selections.append({
-                                'video': video_name,
-                                'video_path': video_info['path'],
-                                'start_time': start_time,
-                                'end_time': end_time,
-                                'duration': end_time - start_time,
-                                'energy_level': self._extract_energy_for_clip(text, video_name, start_time)
-                            })
-                            print(f"            ✅ Found clip: {video_name} ({start_time}s-{end_time}s)")
-                            
-                    except (ValueError, IndexError):
-                        continue
-        
-        # Pattern 3: Look for structured sections like "DJI_0108_dev.MP4:" followed by bullet points
-        for video_info in uploaded_videos:
-            video_name = video_info['name']
-            base_name = video_name.replace('.MP4', '').replace('.mov', '').replace('.mp4', '')
-            
-            # Find sections for this video
-            section_pattern = rf'\*\s*\*\*{re.escape(base_name)}[^:]*:\*\*(.*?)(?=\*\s*\*\*\w+|$)'
-            sections = re.findall(section_pattern, text, re.IGNORECASE | re.DOTALL)
-            
-            for section in sections:
-                # Look for timestamps in this section
-                timestamp_matches = re.findall(r'(\d+):(\d+)-(\d+):(\d+)', section)
-                
-                for match in timestamp_matches:
-                    try:
-                        start_min, start_sec, end_min, end_sec = match
-                        start_time = int(start_min) * 60 + int(start_sec)
-                        end_time = int(end_min) * 60 + int(end_sec)
-                        
-                        if start_time < end_time and end_time - start_time >= 1:
-                            max_duration = 60.0
-                            start_time = max(0, min(start_time, max_duration - 2))
-                            end_time = max(start_time + 1, min(end_time, max_duration))
-                            
-                            clip_selections.append({
-                                'video': video_name,
-                                'video_path': video_info['path'],
-                                'start_time': start_time,
-                                'end_time': end_time,
-                                'duration': end_time - start_time,
-                                'energy_level': self._extract_energy_for_clip(section, video_name, start_time)
-                            })
-                            print(f"            ✅ Found clip: {video_name} ({start_time}s-{end_time}s)")
-                            
-                    except (ValueError, IndexError):
-                        continue
-        
-        # Remove duplicates
-        seen = set()
-        unique_clips = []
-        for clip in clip_selections:
-            clip_key = (clip['video'], clip['start_time'], clip['end_time'])
-            if clip_key not in seen:
-                seen.add(clip_key)
-                unique_clips.append(clip)
-        
-        print(f"         📊 Extracted {len(unique_clips)} unique clips from {len(set(clip['video'] for clip in unique_clips))} videos")
-        
-        return unique_clips[:20]  # Allow more clips for better variety
-    
-    def _extract_sequencing_plan(self, text: str, uploaded_videos: List[Dict]) -> List[Dict]:
-        """Extract sequencing recommendations"""
-        # Simple sequencing extraction - look for order indicators
-        sequencing = []
-        
-        order_patterns = [
-            r'(?:first|start|begin|intro).*?(\w+\.(?:mp4|mov))',
-            r'(?:second|then|next).*?(\w+\.(?:mp4|mov))',
-            r'(?:third|after|follow).*?(\w+\.(?:mp4|mov))',
-            r'(?:final|end|last|outro).*?(\w+\.(?:mp4|mov))'
-        ]
-        
-        for i, pattern in enumerate(order_patterns):
-            import re
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            if matches:
-                video_name = matches[0]
-                sequencing.append({
-                    'sequence_order': i + 1,
-                    'video': video_name,
-                    'timing': f'position_{i+1}',
-                    'reason': f'Recommended for sequence position {i+1}'
-                })
-        
-        return sequencing
-    
-    def _extract_cross_video_transitions(self, text: str) -> List[Dict]:
-        """Extract cross-video transition recommendations"""
-        transitions = []
-        
-        # Look for transition keywords with timestamps
-        import re
-        transition_pattern = r'transition.*?(\d+\.?\d*)[:\s]*(?:second|s)'
-        matches = re.findall(transition_pattern, text, re.IGNORECASE)
-        
-        for match in matches:
-            try:
-                timestamp = float(match)
-                transitions.append({
-                    'timestamp': timestamp,
-                    'type': 'cross_video_cut',
-                    'description': 'Beat-aligned transition between videos'
-                })
-            except:
-                continue
-        
-        return transitions[:10]  # Limit transitions
-    
-    def _extract_energy_matching(self, text: str, uploaded_videos: List[Dict]) -> Dict[str, List[str]]:
-        """Extract energy level to video mappings"""
-        energy_mapping = {
-            'high': [],
-            'medium': [],
-            'low': []
-        }
-        
-        for video_info in uploaded_videos:
-            video_name = video_info['name']
-            
-            # Check energy associations
-            if 'high energy' in text.lower() and video_name.lower() in text.lower():
-                energy_mapping['high'].append(video_name)
-            elif 'medium energy' in text.lower() and video_name.lower() in text.lower():
-                energy_mapping['medium'].append(video_name)
-            elif 'low energy' in text.lower() and video_name.lower() in text.lower():
-                energy_mapping['low'].append(video_name)
-            else:
-                energy_mapping['medium'].append(video_name)  # Default
-        
-        return energy_mapping
-    
-    def _extract_energy_for_clip(self, text: str, video_name: str, timestamp: float) -> str:
-        """Extract energy level for specific clip"""
-        # Simple energy detection around timestamp context
-        if 'high' in text.lower():
-            return 'high'
-        elif 'low' in text.lower():
-            return 'low'
-        else:
-            return 'medium'
-    
-    def _extract_sync_confidence(self, text: str) -> float:
-        """Extract synchronization confidence score"""
-        import re
-        
-        patterns = [
-            r'confidence[:\s]+(\d+\.?\d*)%',
-            r'confidence[:\s]+(\d+\.?\d*)/10',
-            r'confidence[:\s]+(\d+\.?\d*)',
-            r'(\d+\.?\d*)%\s+confidence',
-            r'rate[:\s]+(\d+\.?\d*)/10',
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, text.lower())
-            if matches:
-                try:
-                    score = float(matches[0])
-                    if score > 1:
-                        score = score / 100 if score <= 100 else score / 10
-                    return min(1.0, max(0.0, score))
-                except:
-                    continue
-        
-        return 0.75  # Default confidence
+    # REMOVED: All complex regex parsing methods
+    # These methods violated the "NO REGEX PARSING" architectural tenet
+    # Self-translation in Step 2 handles all structured data extraction
     
     def save_analysis_results(self, result: MultimodalAnalysisResult, output_file: str = None):
         """Save multimodal analysis results to JSON file"""
@@ -676,7 +397,7 @@ Then provide the complete multimodal analysis with precise timestamps based on y
             with open(output_file, 'w') as f:
                 json.dump(result.to_dict(), f, indent=2)
             
-            print(f"      💾 Analysis results saved to: {output_file}")
+            print(f"      � Analysis results saved to: {output_file}")
             
         except Exception as e:
             logger.warning(f"Failed to save analysis results: {e}")

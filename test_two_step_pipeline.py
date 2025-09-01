@@ -27,22 +27,48 @@ from src.core.gemini_multimodal_analyzer import GeminiMultimodalAnalyzer
 from src.core.gemini_self_translator import GeminiSelfTranslator
 from src.editing.video_editor import VideoEditor
 
-def test_two_step_pipeline():
+def test_two_step_pipeline(music_path=None):
     """Test the complete two-step Gemini pipeline"""
     
     print("🧪 TESTING TWO-STEP GEMINI PIPELINE")
     print("=" * 60)
     
     # Test configuration - ALWAYS use input_dev/ for development
-    music_path = "music_input/Fractite - Quicky-qPBvJ6E7RXY.mp3"
-    video_paths = [
-        "input_dev/DJI_0108_dev.MP4",
-        "input_dev/DJI_0110_dev.MP4", 
-        "input_dev/DJI_0121_dev.MP4",
-        "input_dev/IMG_7840_dev.mov",
-        "input_dev/IMG_7841_dev.mov",
-        "input_dev/IMG_7842_dev.mov"
-    ]
+    if music_path is None:
+        # Auto-discover music files in music/ directory
+        music_files = []
+        music_dir = Path("music")
+        if music_dir.exists():
+            music_extensions = ['.mp3', '.m4a', '.wav', '.flac', '.ogg', '.MP3', '.M4A', '.WAV']
+            for file_path in music_dir.iterdir():
+                if file_path.is_file() and file_path.suffix in music_extensions:
+                    music_files.append(str(file_path))
+        
+        if not music_files:
+            print("❌ No music files found in music/ directory")
+            return False
+        
+        # Use the first available music file
+        music_path = music_files[0]
+        print(f"🎵 Auto-selected music: {os.path.basename(music_path)}")
+    
+    print(f"🎵 Testing with: {os.path.basename(music_path)}")
+    
+    # Dynamically discover all video files in input_dev/
+    video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.MP4', '.MOV']
+    video_paths = []
+    
+    input_dev_dir = Path("input_dev")
+    if input_dev_dir.exists():
+        for file_path in input_dev_dir.rglob("*"):
+            if file_path.is_file() and file_path.suffix in video_extensions:
+                video_paths.append(str(file_path))
+    
+    # Sort for consistent ordering and limit to Gemini's maximum (10 videos)
+    video_paths.sort()
+    if len(video_paths) > 10:
+        print(f"   ⚠️  Found {len(video_paths)} videos, limiting to 10 (Gemini's maximum)")
+        video_paths = video_paths[:10]
     
     # Verify test files exist
     print("📂 Verifying test files...")
