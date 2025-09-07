@@ -61,12 +61,19 @@ class BatchVideoGenerator:
         
         self.video_editor = VideoEditor()
         
+        # Initialize Gemini model for video selection
+        if self.multimodal_analyzer and hasattr(self.multimodal_analyzer, 'model'):
+            self.model = self.multimodal_analyzer.model
+        else:
+            self.model = None
+        
         print("🚀 Enhanced Batch Video Generator initialized")
         print(f"   Using development videos: {use_dev_videos}")
         print(f"   Cache enabled: {self.use_cache}")
         print(f"   LLM analysis: {llm_status}")
         print(f"   Fast test mode: {'✅ (3 videos max)' if fast_test else '❌'}")
         print(f"   Full-length video generation: ✅")
+        print(f"   Video orchestration: {'✅ (unlimited videos)' if self.model else '❌'}")
     
     def generate_all_videos(self) -> Dict[str, str]:
         """
@@ -274,16 +281,96 @@ class BatchVideoGenerator:
         else:
             return ['happy', 'cinematic']
     
+    def select_best_videos(self, music_path: str, video_paths: List[str]) -> List[str]:
+        """If >10 videos, ask Gemini to pick the best 10"""
+        
+        if len(video_paths) <= 10:
+            return video_paths
+        
+        if not self.model:
+            print(f"      ⚠️  No Gemini model available, using first 10 videos")
+            return video_paths[:10]
+        
+        print(f"      🎯 Orchestrating: Selecting best 10 from {len(video_paths)} videos...")
+        
+        try:
+            # Upload audio for analysis
+            import google.generativeai as genai
+            uploaded_audio = genai.upload_file(path=music_path)
+            
+            # Wait for processing
+            import time
+            max_wait = 30
+            elapsed = 0
+            while uploaded_audio.state.name == "PROCESSING" and elapsed < max_wait:
+                time.sleep(1)
+                elapsed += 1
+                uploaded_audio = genai.get_file(uploaded_audio.name)
+            
+            if uploaded_audio.state.name != "ACTIVE":
+                print(f"         ⚠️  Audio upload failed, using first 10 videos")
+                return video_paths[:10]
+            
+            # Simple prompt to Gemini
+            video_list = "\n".join([f"- {os.path.basename(path)}" for path in video_paths])
+            
+            prompt = f"""
+            I have {len(video_paths)} videos and need to pick the best 10 for a music video.
+            
+            Music: {os.path.basename(music_path)}
+            
+            Available videos:
+            {video_list}
+            
+            Pick the 10 best video filenames for this music. Just list the filenames, one per line.
+            """
+            
+            response = self.model.generate_content([prompt, uploaded_audio])
+            selected_names = response.text.strip().split('\n')
+            
+            # Match back to full paths
+            selected_paths = []
+            for name in selected_names:
+                name_clean = name.strip().replace('-', '').replace('*', '').strip()
+                for path in video_paths:
+                    if name_clean in os.path.basename(path):
+                        selected_paths.append(path)
+                        break
+            
+            # Ensure we have exactly 10 or fewer
+            final_selection = selected_paths[:10]
+            
+            # If we didn't get enough matches, fill with remaining videos
+            if len(final_selection) < 10:
+                remaining_videos = [v for v in video_paths if v not in final_selection]
+                final_selection.extend(remaining_videos[:10-len(final_selection)])
+            
+            print(f"         ✅ Selected {len(final_selection)} videos for analysis")
+            for i, path in enumerate(final_selection, 1):
+                print(f"            {i}. {os.path.basename(path)}")
+            
+            return final_selection
+            
+        except Exception as e:
+            print(f"         ⚠️  Video selection failed ({e}), using first 10 videos")
+            return video_paths[:10]
+
     def _create_enhanced_video(self, music_track, video_files: List[str]) -> str:
         """Create enhanced full-length video using two-step Gemini pipeline."""
         try:
             print(f"   🎵🎬 Starting TWO-STEP GEMINI PIPELINE...")
             
-            # Step 1: Limit videos for fast testing
-            test_video_files = video_files
-            if self.fast_test:
-                test_video_files = video_files[:3]  # Use only first 3 videos for fast testing
-                print(f"      🚀 Fast test mode: Using only {len(test_video_files)} videos")
+            # NEW: Smart video selection if >10 videos
+            if len(video_files) > 10 and not self.fast_test:
+                print(f"      🎯 {len(video_files)} videos detected - using orchestration...")
+                selected_videos = self.select_best_videos(music_track['file_path'], video_files)
+                test_video_files = selected_videos
+            else:
+                # Original logic for ≤10 videos or fast test mode
+                test_video_files = video_files
+                if self.fast_test:
+                    test_video_files = video_files[:3]  # Use only first 3 videos for fast testing
+                    print(f"      🚀 Fast test mode: Using only {len(test_video_files)} videos")
             
             # Check if two-step pipeline is available
             if not self.multimodal_analyzer:

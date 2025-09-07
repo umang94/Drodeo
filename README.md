@@ -1,10 +1,10 @@
-# Drodeo - AI-Powered Music Video Generator
+# Drodeo - Music Video Generation System
 
-An intelligent music-driven video generation system that creates beat-synchronized videos using Gemini's multimodal analysis.
+A system for generating music-synchronized videos using Gemini's multimodal analysis capabilities.
 
 ## Overview
 
-Drodeo uses a two-step Gemini pipeline to analyze audio and video content, then generates synchronized music videos through intelligent clip selection and editing.
+Drodeo processes audio and video content through a two-step Gemini pipeline to create synchronized music videos.
 
 ## Quick Start
 
@@ -24,24 +24,27 @@ cp .env.example .env
 
 ### Usage
 ```bash
-# Create development videos (recommended for testing)
-python create_dev_videos.py
+# Primary interface with built-in validation
+python main.py
 
-# Generate videos
+# Fast testing with limited videos
+python main.py --fast-test
+
+# Force recreation of development videos
+python main.py --force-setup
+
+# Batch processing for multiple tracks
 python batch_video_generator.py
 
 # Generate music prompts from video content
 python generate_music_prompt.py input_dev/*.mp4
-
-# Test the system
-python test_two_step_pipeline.py
 ```
 
 ## Input Requirements
 
-- **Music**: Place audio files (MP3, M4A, WAV) in `music/` directory
-- **Videos**: Place video files (MP4, MOV) in `input/` directory
-- **Development**: Use `input_dev/` for faster testing (created by `create_dev_videos.py`)
+- **Music**: Audio files (MP3, M4A, WAV) in `music/` directory
+- **Videos**: Video files (MP4, MOV) in `input/` directory
+- **Development**: Use `input_dev/` for testing (created by `create_dev_videos.py`)
 
 ## Configuration
 
@@ -68,16 +71,16 @@ src/
 
 ## Documentation
 
-For detailed technical information, architecture details, and development guidelines, see:
+For technical information and development guidelines, see:
 
-- **[SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)** - Complete system documentation
-- **[CHANGELOG.md](CHANGELOG.md)** - Recent changes and bug fixes
+- **[SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)** - System documentation
+- **[CHANGELOG.md](CHANGELOG.md)** - Recent changes
 
 ## Development
 
-- Use `input_dev/` videos for development (35-70x faster processing)
-- Run `python test_two_step_pipeline.py` to test changes
-- See [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) for detailed development guidelines
+- Use `input_dev/` videos for development
+- Run `python main.py --fast-test` for quick testing
+- Use `python batch_video_generator.py` for batch processing
 
 ## License
 
