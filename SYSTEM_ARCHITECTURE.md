@@ -400,6 +400,36 @@ src/
 - **Documentation:** Comprehensive docstrings for all modules
 - **Error Handling:** Consistent exception handling patterns
 
+### 🎵 Music Prompt Generation Capability
+
+Drodeo now includes a standalone music prompt generation feature that analyzes video content and creates descriptive prompts for music generation APIs like Udio. This allows you to generate custom music that perfectly matches your video content.
+
+#### Music Prompt Generator (`generate_music_prompt.py`)
+**Standalone script for music prompt generation:**
+```bash
+# Analyze videos and generate music prompt
+python generate_music_prompt.py input_dev/video1.mp4 input_dev/video2.mov
+```
+
+**Key Features:**
+- **Video Content Analysis:** Uses Step 1 of Gemini multimodal analysis
+- **Music Prompt Generation:** Creates descriptive prompts for music APIs
+- **No Full Pipeline:** Only runs analysis, no video generation
+- **Console Output:** Direct prompt display for easy copy-paste
+- **Reusable:** Standalone script for music-first workflows
+
+**How It Works:**
+1. **Video Analysis:** Analyzes visual content, mood, pacing, and atmosphere
+2. **Prompt Creation:** Generates comprehensive music generation prompts
+3. **External Use:** Copy prompts to music generation services like Udio
+4. **Optional Integration:** Use generated music in full video pipeline
+
+**Architectural Benefits:**
+- **Maintains Tenets:** No regex parsing - uses natural language analysis directly
+- **Leverages Existing:** Reuses proven Step 1 analysis infrastructure
+- **Clean Separation:** Standalone feature doesn't interfere with main pipeline
+- **Flexible:** Can be used independently or as part of larger workflow
+
 ### Development Video Usage Guidelines
 **⚠️ MANDATORY DEVELOPMENT PRACTICES:**
 
@@ -498,10 +528,9 @@ python src/core/gemini_self_translator.py
 ### Common Issues & Solutions
 
 **1. "GEMINI_API_KEY not found"**
-```bash
-# Solution: Set up your API key
-echo "GEMINI_API_KEY=your_api_key_here" >> .env
-```
+
+Solution: Use the API Key in .env file to resolve. Do NOT modify the .env file configurations without explicit permission
+
 
 **2. "No video files found in input_dev/"**
 ```bash
@@ -533,6 +562,7 @@ python batch_video_generator.py --use-full-res  # Only for production
 2. **Use `--fast-test` flag** - Limits to 3 videos for quick testing
 3. **Enable caching** - Reuses previous analysis results
 4. **Monitor API usage** - Gemini API has rate limits
+5. **Never modify .env configurations**
 
 **Production Deployment:**
 1. **Use full resolution videos** with `--use-full-res`

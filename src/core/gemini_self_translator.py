@@ -309,7 +309,7 @@ Return ONLY the JSON structure. No additional text or explanation."""
                 "fade_out_duration": 1.0
             })
             output_settings = instructions_data.get('output_settings', {
-                "target_duration": audio_duration,
+                "target_duration": audio_duration if audio_duration is not None else 120.0,
                 "fps": 30,
                 "resolution": [1920, 1080],
                 "codec": "libx264",
@@ -322,7 +322,7 @@ Return ONLY the JSON structure. No additional text or explanation."""
                     clip.get('end_time', 0) - clip.get('start_time', 0) 
                     for clip in clips
                 )
-                logger.info(f"      📊 Total clips duration: {total_duration:.1f}s (target: {audio_duration:.1f}s)")
+                logger.info(f"      📊 Total clips duration: {total_duration:.1f}s (target: {audio_duration if audio_duration is not None else 'N/A'}s)")
             
             # Create EditingInstructions object
             editing_instructions = EditingInstructions(

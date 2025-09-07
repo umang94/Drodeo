@@ -30,6 +30,9 @@ python create_dev_videos.py
 # Generate videos
 python batch_video_generator.py
 
+# Generate music prompts from video content
+python generate_music_prompt.py input_dev/*.mp4
+
 # Test the system
 python test_two_step_pipeline.py
 ```
