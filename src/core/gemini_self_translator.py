@@ -56,14 +56,14 @@ class GeminiSelfTranslator:
         
         logger.info("🤖 GeminiSelfTranslator initialized successfully")
     
-    def translate_timeline(self, gemini_reasoning: str, audio_duration: Optional[float] = None, 
+    def translate_timeline(self, gemini_reasoning: str, video_duration: Optional[float] = None, 
                           available_videos: List[str] = None, video_durations: Optional[Dict[str, float]] = None) -> EditingInstructions:
         """
         Translate Gemini's creative timeline into structured JSON editing instructions
         
         Args:
             gemini_reasoning: Natural language creative timeline from Step 1
-            audio_duration: Target video duration in seconds
+            video_duration: Target video duration in seconds (optional - will extract from reasoning)
             available_videos: List of available video filenames
             video_durations: Optional dict mapping video filenames to their durations
             
@@ -73,16 +73,16 @@ class GeminiSelfTranslator:
         start_time = time.time()
         
         logger.info("🤖 Starting Gemini self-translation...")
-        if audio_duration is not None:
-            logger.info(f"   📊 Audio duration: {audio_duration:.1f}s")
+        if video_duration is not None:
+            logger.info(f"   📊 Video duration: {video_duration:.1f}s")
         else:
-            logger.info("   📊 Audio duration: None (will extract from reasoning)")
+            logger.info("   📊 Video duration: None (will extract from reasoning)")
         logger.info(f"   📹 Available videos: {len(available_videos) if available_videos else 0}")
         
         try:
             # Create self-translation prompt
             prompt = self._create_self_translation_prompt(
-                gemini_reasoning, audio_duration, available_videos, video_durations
+                gemini_reasoning, video_duration, available_videos, video_durations
             )
             
             # Send to Gemini Text API for self-translation
@@ -98,7 +98,7 @@ class GeminiSelfTranslator:
             
             # Parse JSON response
             editing_instructions = self._parse_translation_response(
-                response.text, audio_duration
+                response.text, video_duration
             )
             
             processing_time = time.time() - start_time
@@ -115,10 +115,10 @@ class GeminiSelfTranslator:
             logger.error(f"❌ Self-translation failed: {str(e)}")
             
             # Return fallback instructions
-            return self._create_fallback_instructions(audio_duration, available_videos)
+            return self._create_fallback_instructions(video_duration, available_videos)
     
     def _create_self_translation_prompt(self, gemini_reasoning: str, 
-                                       audio_duration: float, 
+                                       video_duration: float, 
                                        available_videos: List[str],
                                        video_durations: Optional[Dict[str, float]] = None) -> str:
         """
@@ -126,7 +126,7 @@ class GeminiSelfTranslator:
         
         Args:
             gemini_reasoning: Original creative timeline from Step 1
-            audio_duration: Target duration in seconds
+            video_duration: Target duration in seconds
             available_videos: List of available video filenames
             video_durations: Optional dict mapping video filenames to their durations
             
@@ -152,21 +152,24 @@ class GeminiSelfTranslator:
 - Always respect these duration limits to prevent "T_Start should be smaller than clip's duration" errors
 """
         
-        # Handle case where audio_duration is None (extract from reasoning)
+        # Handle case where video_duration is None (extract from reasoning)
         duration_instruction = ""
         target_duration_for_output = "EXTRACT_FROM_REASONING"
         
-        if audio_duration is None:
+        if video_duration is None:
             duration_instruction = """
-**CRITICAL:** The audio duration is not provided. You MUST extract the actual audio duration from the creative timeline analysis above and use that as the target duration."""
+**CRITICAL:** The video duration is not provided. You MUST extract the actual video duration from the creative timeline analysis above and use that as the target duration."""
             target_duration_for_output = "EXTRACT_FROM_REASONING"
         else:
-            duration_instruction = f"- Target video duration: {audio_duration} seconds"
-            target_duration_for_output = audio_duration
+            duration_instruction = f"- Target video duration: {video_duration} seconds"
+            target_duration_for_output = video_duration
 
-        prompt = f"""You are a professional video editing assistant. Your task is to convert a creative video timeline into precise JSON editing instructions for MoviePy video editing software.
+        prompt = f"""You are a professional video editing assistant. Your task is to convert Gemini's creative timeline into precise JSON editing instructions for MoviePy video editing software.
 
-**ORIGINAL CREATIVE TIMELINE:**
+**CRITICAL INSTRUCTION: BLINDLY FOLLOW GEMINI'S CREATIVE TIMELINE**
+You MUST follow the exact creative timeline provided by Gemini in Step 1. Do NOT make creative decisions or optimize clip selection. Your only job is to translate the provided timeline into JSON format.
+
+**ORIGINAL CREATIVE TIMELINE FROM STEP 1:**
 {gemini_reasoning}
 
 **TECHNICAL CONSTRAINTS:**
@@ -177,15 +180,21 @@ class GeminiSelfTranslator:
 {video_info_str}
 
 **YOUR TASK:**
-Convert the creative timeline above into precise JSON editing instructions. 
+Convert the creative timeline above into precise JSON editing instructions EXACTLY as specified in the timeline.
 
-**STEP 1: EXTRACT AUDIO INFORMATION**
-From the creative timeline above, identify:
-- Actual audio duration in seconds
-- Audio tempo/BPM if mentioned
-- Musical structure and timing
+**CRITICAL REQUIREMENTS:**
 
-**STEP 2: CREATE JSON STRUCTURE**
+1. **BLIND FOLLOWING:** Use EXACTLY the video sources, timestamps, and durations specified in the creative timeline
+2. **NO CREATIVE DECISIONS:** Do not optimize, shorten, or modify the timeline in any way
+3. **Exact Video Paths:** Use only filenames from the available_videos list
+4. **Precise Timestamps:** All times in seconds (float format) exactly as specified
+5. **Complete Coverage:** Clips must cover the full target duration specified in the timeline
+6. **No Gaps:** Ensure transitions connect clips seamlessly
+7. **Energy Matching:** Map creative descriptions to energy levels
+8. **MoviePy Compatible:** All parameters must work with MoviePy 1.0.3
+9. **RESPECT VIDEO DURATIONS:** Always check that start_time and end_time are within each video's actual duration
+
+**JSON STRUCTURE:**
 Follow this exact structure:
 
 ```json
@@ -200,7 +209,7 @@ Follow this exact structure:
         "fade_in": 0.3,
         "fade_out": 0.3,
         "speed_factor": 1.0,
-        "volume_factor": 0.3
+        "volume_factor": 0.0
       }}
     ],
     "transitions": [
@@ -211,18 +220,11 @@ Follow this exact structure:
         "next_clip_index": 1
       }}
     ],
-    "audio_sync": {{
-      "music_volume": 0.7,
-      "original_audio_volume": 0.3,
-      "fade_in_duration": 1.0,
-      "fade_out_duration": 1.0
-    }},
     "output_settings": {{
       "target_duration": {target_duration_for_output},
       "fps": 30,
       "resolution": [1920, 1080],
-      "codec": "libx264",
-      "audio_codec": "aac"
+      "codec": "libx264"
     }}
   }},
   "metadata": {{
@@ -233,42 +235,26 @@ Follow this exact structure:
 }}
 ```
 
-**CRITICAL REQUIREMENTS:**
-
-1. **Exact Video Paths:** Use only filenames from the available_videos list
-2. **Precise Timestamps:** All times in seconds (float format)
-3. **Complete Coverage:** Clips must cover the full target duration (extract from reasoning above)
-4. **No Gaps:** Ensure transitions connect clips seamlessly
-5. **Energy Matching:** Map creative descriptions to energy levels
-6. **MoviePy Compatible:** All parameters must work with MoviePy 1.0.3
-7. **EFFICIENT CLIP COUNT:** Generate 4-8 clips maximum for optimal performance
-8. **AVOID EXCESSIVE CLIPS:** Do not create more clips than necessary - longer clips are better than many short clips
-
 **PARAMETER GUIDELINES:**
 
 - **fade_in/fade_out:** 0.1-1.0 seconds (0.3 typical)
 - **speed_factor:** 0.5-2.0 (1.0 = normal speed)
-- **volume_factor:** 0.0-1.0 (0.3 for original audio, 0.7 for music)
+- **volume_factor:** 0.0 (no audio in video-only mode)
 - **transition duration:** 0.2-1.0 seconds
 - **energy_level:** "high" (action/movement), "medium" (moderate), "low" (calm/static)
-
-**EXAMPLE MAPPING:**
-- "Fast-paced drone footage" → energy_level: "high", speed_factor: 1.0
-- "Slow establishing shot" → energy_level: "low", fade_in: 0.5
-- "Beat drop at 45 seconds" → transition at timestamp: 45.0
 
 Return ONLY the JSON structure. No additional text or explanation."""
 
         return prompt
     
     def _parse_translation_response(self, response_text: str, 
-                                   audio_duration: float) -> EditingInstructions:
+                                   video_duration: float) -> EditingInstructions:
         """
         Parse Gemini's JSON response into EditingInstructions
         
         Args:
             response_text: Raw response from Gemini
-            audio_duration: Target duration for validation
+            video_duration: Target duration for validation
             
         Returns:
             Parsed EditingInstructions object
@@ -309,7 +295,7 @@ Return ONLY the JSON structure. No additional text or explanation."""
                 "fade_out_duration": 1.0
             })
             output_settings = instructions_data.get('output_settings', {
-                "target_duration": audio_duration if audio_duration is not None else 120.0,
+                "target_duration": video_duration if video_duration is not None else 120.0,
                 "fps": 30,
                 "resolution": [1920, 1080],
                 "codec": "libx264",
@@ -322,7 +308,7 @@ Return ONLY the JSON structure. No additional text or explanation."""
                     clip.get('end_time', 0) - clip.get('start_time', 0) 
                     for clip in clips
                 )
-                logger.info(f"      📊 Total clips duration: {total_duration:.1f}s (target: {audio_duration if audio_duration is not None else 'N/A'}s)")
+                logger.info(f"      📊 Total clips duration: {total_duration:.1f}s (target: {video_duration if video_duration is not None else 'N/A'}s)")
             
             # Create EditingInstructions object
             editing_instructions = EditingInstructions(
@@ -344,13 +330,13 @@ Return ONLY the JSON structure. No additional text or explanation."""
             logger.error(f"❌ Response parsing failed: {str(e)}")
             raise ValueError(f"Failed to parse Gemini response: {str(e)}")
     
-    def _create_fallback_instructions(self, audio_duration: Optional[float], 
+    def _create_fallback_instructions(self, video_duration: Optional[float], 
                                      available_videos: List[str]) -> EditingInstructions:
         """
         Create fallback editing instructions when self-translation fails
         
         Args:
-            audio_duration: Target duration in seconds (can be None)
+            video_duration: Target duration in seconds (can be None)
             available_videos: List of available video filenames
             
         Returns:
@@ -358,21 +344,21 @@ Return ONLY the JSON structure. No additional text or explanation."""
         """
         logger.warning("🔧 Creating fallback editing instructions...")
         
-        # Handle case where audio_duration is None
-        if audio_duration is None:
-            audio_duration = 120.0  # Default fallback duration
-            logger.warning(f"   ⚠️  Audio duration is None, using fallback: {audio_duration}s")
+        # Handle case where video_duration is None
+        if video_duration is None:
+            video_duration = 120.0  # Default fallback duration
+            logger.warning(f"   ⚠️  Video duration is None, using fallback: {video_duration}s")
         
         # Create simple clips using available videos
         clips = []
         if available_videos:
-            clip_duration = min(audio_duration / len(available_videos), 30.0)
+            clip_duration = min(video_duration / len(available_videos), 30.0)
             
             for i, video_path in enumerate(available_videos):
                 start_time = i * clip_duration
-                end_time = min(start_time + clip_duration, audio_duration)
+                end_time = min(start_time + clip_duration, video_duration)
                 
-                if start_time >= audio_duration:
+                if start_time >= video_duration:
                     break
                 
                 clips.append({
@@ -406,7 +392,7 @@ Return ONLY the JSON structure. No additional text or explanation."""
                 "fade_out_duration": 1.0
             },
             output_settings={
-                "target_duration": audio_duration,
+                "target_duration": video_duration,
                 "fps": 30,
                 "resolution": [1920, 1080],
                 "codec": "libx264",

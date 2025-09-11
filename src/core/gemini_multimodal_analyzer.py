@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Gemini Multimodal Analyzer
+Gemini Multimodal Analyzer (Audio-Free)
 
-Complete multimodal analysis using Gemini API for audio + video content.
-Replaces separate audio and video analysis with unified multimodal approach.
+Complete video-only analysis using Gemini API for video content.
+Focuses on creating the longest possible engaging video from available footage.
 """
 
 import os
@@ -27,11 +27,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MultimodalAnalysisResult:
-    """Results from analyzing multiple videos with single audio track using Gemini"""
-    audio_path: str
+    """Results from analyzing multiple videos using Gemini (audio-free)"""
     video_paths: List[str]
-    audio_duration: float
-    audio_tempo: float
+    total_video_duration: float
     clip_selections: List[Dict]  # Selected clips from different videos
     sequencing_plan: List[Dict]  # Recommended sequence across videos
     cross_video_transitions: List[Dict]  # Transitions between different videos
@@ -39,25 +37,25 @@ class MultimodalAnalysisResult:
     sync_confidence: float
     gemini_reasoning: str
     processing_time: float
+    udio_prompt: str  # Suggested UDIO audio prompt
     
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization"""
         return {
-            'audio_path': self.audio_path,
             'video_paths': self.video_paths,
-            'audio_duration': self.audio_duration,
-            'audio_tempo': self.audio_tempo,
+            'total_video_duration': self.total_video_duration,
             'clip_selections': self.clip_selections,
             'sequencing_plan': self.sequencing_plan,
             'cross_video_transitions': self.cross_video_transitions,
             'energy_matching': self.energy_matching,
             'sync_confidence': self.sync_confidence,
             'processing_time': self.processing_time,
-            'gemini_reasoning': self.gemini_reasoning
+            'gemini_reasoning': self.gemini_reasoning,
+            'udio_prompt': self.udio_prompt
         }
 
 class GeminiMultimodalAnalyzer:
-    """Analyzes audio + multiple videos simultaneously using Gemini's multimodal capabilities"""
+    """Analyzes multiple videos using Gemini's multimodal capabilities (audio-free)"""
     
     def __init__(self):
         """Initialize Gemini multimodal analyzer."""
@@ -88,14 +86,13 @@ class GeminiMultimodalAnalyzer:
         """Check if Gemini API is available and configured."""
         return GEMINI_AVAILABLE and self.model is not None
     
-    def analyze_batch(self, audio_path: str, video_paths: List[str], 
-                     test_name: str = "Music Video Generation") -> Optional[MultimodalAnalysisResult]:
+    def analyze_batch(self, video_paths: List[str], 
+                     test_name: str = "Video Content Generation") -> Optional[MultimodalAnalysisResult]:
         """
-        Analyze multiple videos with single audio track using Gemini multimodal capabilities.
-        This is the core method that replaces separate audio and video analysis.
+        Analyze multiple videos using Gemini multimodal capabilities (audio-free).
+        Focuses on creating the longest possible engaging video from available footage.
         
         Args:
-            audio_path: Path to music file
             video_paths: List of video file paths
             test_name: Name for this analysis (for logging)
             
@@ -106,8 +103,7 @@ class GeminiMultimodalAnalyzer:
             print(f"   ❌ Cannot perform multimodal analysis - Gemini API not available")
             return None
         
-        print(f"   🎵🎬 Starting Gemini multimodal analysis...")
-        print(f"      Audio: {Path(audio_path).name}")
+        print(f"   🎬 Starting Gemini video-only analysis...")
         print(f"      Videos: {len(video_paths)} files")
         
         start_time = time.time()
@@ -136,37 +132,30 @@ class GeminiMultimodalAnalyzer:
             
             print(f"      ✅ {len(uploaded_videos)} videos uploaded successfully")
             
-            # Step 2: Upload audio to Gemini
-            print(f"      📤 Uploading audio to Gemini...")
-            uploaded_audio = self._upload_audio_to_gemini(audio_path)
-            if not uploaded_audio:
-                print(f"      ❌ Audio upload failed")
-                return None
-            
-            print(f"      ✅ Audio uploaded successfully")
-            
-            # Step 3: Perform multimodal analysis
-            print(f"      🤖 Performing multimodal analysis...")
-            analysis_result = self._analyze_multimodal_with_gemini(
-                audio_path, uploaded_audio, uploaded_videos, test_name
+            # Step 2: Perform video-only analysis
+            print(f"      🤖 Performing video-only analysis...")
+            analysis_result = self._analyze_video_only_with_gemini(
+                uploaded_videos, test_name
             )
             
             processing_time = time.time() - start_time
             
             if analysis_result:
                 analysis_result.processing_time = processing_time
-                print(f"      ✅ Multimodal analysis complete ({processing_time:.1f}s)")
+                print(f"      ✅ Video-only analysis complete ({processing_time:.1f}s)")
                 print(f"         Clip selections: {len(analysis_result.clip_selections)}")
                 print(f"         Transitions: {len(analysis_result.cross_video_transitions)}")
                 print(f"         Sync confidence: {analysis_result.sync_confidence:.2f}")
+                if analysis_result.udio_prompt:
+                    print(f"         UDIO prompt: {analysis_result.udio_prompt}")
                 return analysis_result
             else:
-                print(f"      ❌ Multimodal analysis failed")
+                print(f"      ❌ Video-only analysis failed")
                 return None
                 
         except Exception as e:
-            print(f"      ❌ Error in multimodal analysis: {e}")
-            logger.error(f"Multimodal analysis failed: {e}")
+            print(f"      ❌ Error in video-only analysis: {e}")
+            logger.error(f"Video-only analysis failed: {e}")
             return None
     
     def _upload_video_to_gemini(self, video_path: str):
@@ -194,44 +183,17 @@ class GeminiMultimodalAnalyzer:
             print(f"            Upload error: {e}")
             return None
     
-    def _upload_audio_to_gemini(self, audio_path: str):
-        """Upload audio file to Gemini API"""
+    def _analyze_video_only_with_gemini(self, uploaded_videos: List[Dict], test_name: str) -> Optional[MultimodalAnalysisResult]:
+        """Send only videos to Gemini for video-only analysis"""
         try:
-            # Upload file
-            uploaded_file = genai.upload_file(path=audio_path)
+            # Create video-only prompt with UDIO generation request
+            prompt = self._create_video_only_prompt(uploaded_videos, test_name)
             
-            # Wait for processing
-            max_wait = 30
-            elapsed = 0
-            
-            while uploaded_file.state.name == "PROCESSING" and elapsed < max_wait:
-                time.sleep(1)
-                elapsed += 1
-                uploaded_file = genai.get_file(uploaded_file.name)
-            
-            if uploaded_file.state.name == "ACTIVE":
-                return uploaded_file
-            else:
-                print(f"         Audio processing failed: {uploaded_file.state.name}")
-                return None
-                
-        except Exception as e:
-            print(f"         Audio upload error: {e}")
-            return None
-    
-    def _analyze_multimodal_with_gemini(self, audio_path: str, uploaded_audio, 
-                                       uploaded_videos: List[Dict], test_name: str) -> Optional[MultimodalAnalysisResult]:
-        """Send audio + multiple videos to Gemini for unified analysis"""
-        try:
-            # Create comprehensive multimodal prompt
-            prompt = self._create_multimodal_prompt(audio_path, uploaded_videos, test_name)
-            
-            print(f"      📝 Sending prompt to Gemini:")
-            print(f"         Audio: {Path(audio_path).name}")
+            print(f"      📝 Sending video-only prompt to Gemini:")
             print(f"         Videos: {[v['name'] for v in uploaded_videos]}")
             
-            # Prepare content with audio and all videos
-            content_parts = [prompt, uploaded_audio]
+            # Prepare content with only videos (no audio)
+            content_parts = [prompt]
             
             # Add all uploaded videos
             for video_info in uploaded_videos:
@@ -248,10 +210,10 @@ class GeminiMultimodalAnalyzer:
             print(response.text)
             print(f"="*80 + "\n")
             
-            # Parse multimodal response
+            # Parse video-only response
             print(f"      📊 Parsing Gemini response...")
-            result = self._parse_multimodal_response(
-                response.text, audio_path, uploaded_videos
+            result = self._parse_video_only_response(
+                response.text, uploaded_videos
             )
             
             if result:
@@ -260,132 +222,153 @@ class GeminiMultimodalAnalyzer:
                 print(f"         Video sources in clips: {set(clip['video'] for clip in result.clip_selections)}")
                 print(f"         Cross-video transitions: {len(result.cross_video_transitions)}")
                 print(f"         Sequencing plan: {len(result.sequencing_plan)}")
+                if result.udio_prompt:
+                    print(f"         UDIO prompt: {result.udio_prompt}")
             
             return result
             
         except Exception as e:
-            print(f"         ❌ Gemini multimodal analysis error: {e}")
-            logger.error(f"Gemini multimodal analysis error: {e}")
+            print(f"         ❌ Gemini video-only analysis error: {e}")
+            logger.error(f"Gemini video-only analysis error: {e}")
             return None
-    
-    def _create_multimodal_prompt(self, audio_path: str, uploaded_videos: List[Dict], test_name: str) -> str:
-        """Create comprehensive prompt for multimodal analysis with explicit audio analysis request"""
+
+    def _create_video_only_prompt(self, uploaded_videos: List[Dict], test_name: str) -> str:
+        """Create video-only prompt with UDIO generation request and longer video preference"""
         
         video_names = [v['name'] for v in uploaded_videos]
         
         prompt = f"""
-MULTIMODAL MUSIC-VIDEO ANALYSIS: {test_name}
+VIDEO-ONLY CONTENT ANALYSIS: {test_name}
 
-**CRITICAL:** You have been provided with both an audio track and {len(uploaded_videos)} video files. Please confirm you can access both by analyzing them together.
+**CRITICAL:** You have been provided with {len(uploaded_videos)} video files. Please analyze them to create an engaging video compilation.
 
-**STEP 1 - AUDIO ANALYSIS (REQUIRED FIRST):**
-Analyze the audio track "{Path(audio_path).name}" and provide:
-- Exact duration in seconds (listen to the full track)
-- BPM/Tempo (detect actual beats)
-- Musical structure with precise timestamps (intro, verse, chorus, bridge, outro)
-- Energy profile throughout the song (high/medium/low energy sections)
-- Genre and instrumentation
-- Key musical moments and transitions
-
-**STEP 2 - VIDEO ANALYSIS (REQUIRED):**
+**STEP 1 - VIDEO ANALYSIS:**
 Analyze each video source:
-{chr(10).join([f'- {i+1}. {name}: Visual content, duration, scene changes, energy level' for i, name in enumerate(video_names)])}
+{chr(10).join([f'- {i+1}. {name}: Visual content, duration, scene changes, energy level, pacing' for i, name in enumerate(video_names)])}
 
-**STEP 3 - MULTIMODAL SYNCHRONIZATION PLAN:**
-Create a detailed timeline that combines the audio analysis with video recommendations:
+**STEP 2 - CONTENT SYNCHRONIZATION PLAN:**
+Create a detailed timeline that maximizes the use of available footage and attempts for the longest possible output video:
 
-1. **COMPELLING HOOK (0-15 seconds):**
-   - Based on actual audio intro, select matching video clip
+1. **COMPELLING HOOK:**
+   - Select the most engaging opening clip from any video
    - Specify exact video source and timestamp
-   - Match visual energy to musical opening
+   - Create visual intrigue to capture attention
 
-2. **SONG STRUCTURE ALIGNMENT:**
-   For each musical section identified in Step 1, specify:
-   - Which video source provides the best visual match
+2. **CONTENT FLOW ALIGNMENT:**
+   For optimal viewing experience, analyse:
+   - Which video sources provide the best visual continuity
    - Exact timestamps for optimal clips from EACH video
-   - Energy level matching between audio and video
-   - Beat-aligned cut points based on actual audio analysis
+   - Energy level progression throughout the video
+   - Natural transition points based on visual flow
 
 3. **CROSS-VIDEO CLIP SELECTION:**
-   For EACH video source, identify 3-5 specific clips with:
+   For EACH video source, identify specific clips with:
    - Video name and exact timestamps (start-end in seconds)
-   - How each clip matches specific audio moments
-   - Energy level alignment with music
-   - Recommended placement in song structure
+   - How each clip contributes to the overall narrative
+   - Energy level and visual characteristics
+   - Recommended placement in the overall sequence
+   - Look for multiple clips within the same input video
+   -Always ensure start_time and end_time are within the actual video duration
 
-4. **TRANSITION RECOMMENDATIONS:**
-   - Specify exact transition points based on musical beats
-   - Match visual movement to audio rhythm
+4. **CLIP SELECTION GUIDANCE:**
+   - **Clips can start from ANY timestamp within the video, not just 0:00**
+   - **Select the most visually engaging segments regardless of their position in the timeline**
+   - **Always ensure start_time and end_time are within the actual video duration**
+   - **Prefer content-rich segments over arbitrary beginning/end points**
+   - **Look for multiple clips within the same input video**
+
+5. **TRANSITION RECOMMENDATIONS:**
+   - Specify transition points that maintain visual flow
+   - Match visual movement and composition between clips
    - Create seamless flow between different video sources
+
+**STEP 3 - UDIO AUDIO PROMPT GENERATION:**
+Based on the visual content and pacing, create a concise UDIO prompt for generating matching audio:
+- Suggest appropriate music genre and atmosphere
+- Recommend duration based on total video content
+- Keep it concise and ready for UDIO input
+
+**PREFERENCE:** When creating the timeline, prefer longer video durations when possible to make full use of the available footage, while maintaining engagement and visual coherence.
 
 **OUTPUT FORMAT:**
 Start your response with:
-"AUDIO ACCESS: [CONFIRMED/FAILED]"
-"AUDIO DURATION: [X] seconds"
-"AUDIO BPM: [X] BPM"
+"VIDEO ANALYSIS COMPLETE"
+"TOTAL_DURATION: [X] seconds"
 
-Then provide the complete multimodal analysis with precise timestamps based on your actual audio analysis.
+Then provide the complete video analysis with precise timestamps.
 
-**GOAL:** Create a music video plan that uses REAL audio analysis (not assumptions) to perfectly synchronize visual content with the actual musical structure, rhythm, and energy progression.
+Include your UDIO prompt suggestion at the end as:
+"UDIO_PROMPT: [your concise audio prompt suggestion]"
+
+**GOAL:** Create an engaging video compilation that makes optimal use of all available footage. It also  provides a matching audio suggestion for manual generation.
 """
         
         return prompt
-    
-    def _parse_multimodal_response(self, response_text: str, audio_path: str, 
-                                  uploaded_videos: List[Dict]) -> Optional[MultimodalAnalysisResult]:
+
+    def _parse_video_only_response(self, response_text: str, uploaded_videos: List[Dict]) -> Optional[MultimodalAnalysisResult]:
         """
         NO REGEX PARSING - Store raw response for self-translation
         
         ARCHITECTURAL TENET: This method no longer parses natural language with regex.
-        Instead, it extracts only basic metadata and stores the complete response
-        for Gemini's self-translation in Step 2.
+        Instead, it stores the complete response for Gemini's self-translation in Step 2.
+        All parsing is deferred to the self-translator.
         """
         try:
-            # Extract only basic audio information using simple patterns (not complex parsing)
-            audio_duration = self._extract_basic_audio_duration(response_text)
-            audio_tempo = self._extract_basic_audio_tempo(response_text)
+            # Extract actual duration from Gemini response if available
+            actual_duration = self._extract_duration_from_response(response_text)
             
             # NO REGEX PARSING - Return raw response for self-translation
             return MultimodalAnalysisResult(
-                audio_path=audio_path,
                 video_paths=[v['path'] for v in uploaded_videos],
-                audio_duration=audio_duration,
-                audio_tempo=audio_tempo,
+                total_video_duration=actual_duration,  # Use actual duration or fallback
                 clip_selections=[],  # Empty - will be filled by self-translator
                 sequencing_plan=[],  # Empty - will be filled by self-translator
                 cross_video_transitions=[],  # Empty - will be filled by self-translator
                 energy_matching={},  # Empty - will be filled by self-translator
                 sync_confidence=0.85,  # Default confidence
                 gemini_reasoning=response_text,  # FULL response for self-translation
-                processing_time=0.0  # Will be set by caller
+                processing_time=0.0,  # Will be set by caller
+                udio_prompt="Epic cinematic music matching the video content"  # Default prompt
             )
             
         except Exception as e:
-            print(f"         ❌ Error processing multimodal response: {e}")
-            logger.error(f"Error processing multimodal response: {e}")
+            print(f"         ❌ Error processing video-only response: {e}")
+            logger.error(f"Error processing video-only response: {e}")
             return None
     
-    def _extract_basic_audio_duration(self, text: str) -> float:
+    def _extract_duration_from_response(self, response_text: str) -> float:
         """
-        NO REGEX EXTRACTION - Return default for self-translation
-        
-        ARCHITECTURAL TENET: No regex parsing of natural language responses.
-        The self-translator will extract all structured data in Step 2.
+        Extract the actual video duration from Gemini's response.
+        This is the only parsing allowed to get the duration for the self-translator.
         """
-        return 120.0  # Default duration - actual value extracted by self-translator
+        try:
+            # Look for "TOTAL_DURATION: X seconds" pattern in the response
+            lines = response_text.split('\n')
+            for line in lines:
+                if "TOTAL_DURATION:" in line:
+                    # Extract the number from the line
+                    parts = line.split(':')
+                    if len(parts) > 1:
+                        duration_part = parts[1].strip()
+                        # Remove "seconds" and any other non-numeric characters
+                        duration_str = ''.join(c for c in duration_part if c.isdigit() or c == '.')
+                        if duration_str:
+                            return float(duration_str)
+            
+            # If not found, return default duration
+            return 120.0
+            
+        except (ValueError, IndexError):
+            return 120.0  # Fallback to default duration
+            
+        except Exception as e:
+            print(f"         ❌ Error processing video-only response: {e}")
+            logger.error(f"Error processing video-only response: {e}")
+            return None
     
-    def _extract_basic_audio_tempo(self, text: str) -> float:
-        """
-        NO REGEX EXTRACTION - Return default for self-translation
-        
-        ARCHITECTURAL TENET: No regex parsing of natural language responses.
-        The self-translator will extract all structured data in Step 2.
-        """
-        return 120.0  # Default tempo - actual value extracted by self-translator
-    
-    # REMOVED: All complex regex parsing methods
-    # These methods violated the "NO REGEX PARSING" architectural tenet
-    # Self-translation in Step 2 handles all structured data extraction
+    # REMOVED: All audio-related methods (_analyze_multimodal_with_gemini, _create_multimodal_prompt, 
+    # _parse_multimodal_response, _extract_basic_audio_duration, _extract_basic_audio_tempo)
+    # These methods were for audio-video multimodal analysis and are no longer needed
     
     def save_analysis_results(self, result: MultimodalAnalysisResult, output_file: str = None):
         """Save multimodal analysis results to JSON file"""
@@ -410,31 +393,28 @@ def test_multimodal_analyzer():
         print("❌ Gemini multimodal analyzer not available")
         return
     
-    # Test with sample files (if they exist)
-    audio_path = "music_input/Fractite - Quicky-qPBvJ6E7RXY.mp3"
+    # Test with sample video files (if they exist)
     video_paths = [
         "input_dev/DJI_0108_dev.MP4",
         "input_dev/IMG_7840_dev.mov"
     ]
     
     # Check if files exist
-    if not os.path.exists(audio_path):
-        print(f"❌ Test audio file not found: {audio_path}")
-        return
-    
     existing_videos = [v for v in video_paths if os.path.exists(v)]
     if not existing_videos:
         print(f"❌ No test video files found")
         return
     
-    print(f"🧪 Testing multimodal analyzer...")
-    result = analyzer.analyze_batch(audio_path, existing_videos, "Test Analysis")
+    print(f"🧪 Testing video-only multimodal analyzer...")
+    result = analyzer.analyze_batch(existing_videos, "Test Video Analysis")
     
     if result:
         print(f"✅ Test successful!")
         print(f"   Clip selections: {len(result.clip_selections)}")
         print(f"   Sync confidence: {result.sync_confidence:.2f}")
-        analyzer.save_analysis_results(result, "test_multimodal_result.json")
+        if result.udio_prompt:
+            print(f"   UDIO prompt: {result.udio_prompt}")
+        analyzer.save_analysis_results(result, "test_video_only_result.json")
     else:
         print(f"❌ Test failed")
 

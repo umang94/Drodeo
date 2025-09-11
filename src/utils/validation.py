@@ -104,21 +104,31 @@ def validate_directories():
     
     return all_valid
 
-def setup_development_videos(force=False):
+def setup_development_videos(force=False, source_dir="input"):
     """
     Set up development videos with smart caching.
     Auto-creates low-res videos on first run, uses cached copies thereafter.
     
     Args:
         force (bool): Force recreation of development videos even if they exist
+        source_dir (str): Source directory containing video files
     
     Returns:
         bool: True if setup was successful, False otherwise
     """
     print("🎥 Setting up development videos...")
     
-    input_dir = Path("input")
-    input_dev_dir = Path("input_dev")
+    source_path = Path(source_dir)
+    source_dir_name = source_path.name
+    
+    # For "input" directory, use input_dev directly for backward compatibility
+    if source_dir_name == "input":
+        input_dev_dir = Path("input_dev")
+    else:
+        # For custom directories, create subdirectory under input_dev
+        input_dev_dir = Path("input_dev") / source_dir_name
+    
+    input_dir = source_path
     
     # Check if input directory exists and has videos
     if not input_dir.exists():
@@ -146,9 +156,9 @@ def setup_development_videos(force=False):
     print(f"   🔄 Creating development videos from {len(video_files)} source files...")
     
     try:
-        # Run create_dev_videos.py script
+        # Run create_dev_videos.py script with source and target directories
         result = subprocess.run(
-            [sys.executable, "create_dev_videos.py"],
+            [sys.executable, "scripts/create_dev_videos.py", str(input_dir), str(input_dev_dir)],
             capture_output=True,
             text=True,
             cwd=os.getcwd()

@@ -15,48 +15,47 @@ from src.core.gemini_multimodal_analyzer import GeminiMultimodalAnalyzer
 from src.core.gemini_self_translator import GeminiSelfTranslator
 from src.editing.video_editor import VideoEditor
 
-def run_two_step_pipeline(fast_test: bool = False, music_path: Optional[str] = None) -> bool:
+def run_two_step_pipeline(fast_test: bool = False, music_path: Optional[str] = None, input_dir: Optional[str] = None) -> bool:
     """
     Run the complete two-step Gemini pipeline with validation and error handling.
     
     Args:
         fast_test: If True, limits processing for faster testing
         music_path: Optional specific music file to process
+        input_dir: Optional custom directory containing video files
     
     Returns:
         bool: True if pipeline completed successfully, False otherwise
     """
-    print("🚀 Starting Two-Step Gemini Pipeline")
+    print("🚀 Starting Two-Step Gemini Pipeline (Audio-Free)")
     print("=" * 50)
     
-    # Get music file to process
+    # Get music file to process (optional for audio-free mode)
+    # Always attempt to find music files, auto-discover if no specific path provided
     music_file = _get_music_file(music_path)
-    if not music_file:
-        return False
-    
-    print(f"🎵 Processing: {os.path.basename(music_file)}")
     
     # Get available development videos
-    video_files = _get_development_videos(fast_test)
+    video_files = _get_development_videos(fast_test, input_dir)
     if not video_files:
         return False
     
     try:
-        # Step 1: Multimodal Analysis
-        print("\n📊 Step 1: Multimodal Analysis")
+        # Step 1: Video-Only Multimodal Analysis
+        print("\n📊 Step 1: Video-Only Multimodal Analysis")
         analyzer = GeminiMultimodalAnalyzer()
         
         start_time = time.time()
         multimodal_result = analyzer.analyze_batch(
-            audio_path=music_file,
             video_paths=video_files,
-            test_name=f"Music: {os.path.basename(music_file)}"
+            test_name=f"Video Analysis - {len(video_files)} videos"
         )
         
         step1_time = time.time() - start_time
         print(f"   ✅ Completed in {step1_time:.1f}s")
-        print(f"   📊 Audio: {multimodal_result.audio_duration:.1f}s, {multimodal_result.audio_tempo} BPM")
+        print(f"   📊 Total duration: {multimodal_result.total_video_duration:.1f}s")
         print(f"   📈 Sync confidence: {multimodal_result.sync_confidence:.2f}")
+        if multimodal_result.udio_prompt:
+            print(f"   🎵 UDIO prompt: {multimodal_result.udio_prompt}")
         
         # Step 2: Self-Translation
         print("\n🤖 Step 2: Self-Translation")
@@ -69,7 +68,7 @@ def run_two_step_pipeline(fast_test: bool = False, music_path: Optional[str] = N
         start_time = time.time()
         editing_instructions = translator.translate_timeline(
             gemini_reasoning=multimodal_result.gemini_reasoning,
-            audio_duration=multimodal_result.audio_duration,
+            video_duration=multimodal_result.total_video_duration,
             available_videos=available_video_names,
             video_durations=video_durations
         )
@@ -99,11 +98,22 @@ def run_two_step_pipeline(fast_test: bool = False, music_path: Optional[str] = N
                     break
         
         start_time = time.time()
-        output_path = editor.create_from_instructions(
-            instructions=editing_instructions,
-            music_name=Path(music_file).stem,
-            music_path=music_file
-        )
+        
+        # Handle audio-free mode (music_file might be None)
+        if music_file:
+            output_path = editor.create_from_instructions(
+                instructions=editing_instructions,
+                music_name=Path(music_file).stem,
+                music_path=music_file
+            )
+        else:
+            # Create video without music (silent video)
+            output_path = editor.create_from_instructions(
+                instructions=editing_instructions,
+                music_name="silent_video",
+                music_path=None
+            )
+            print("   🎵 No music file provided - creating silent video")
         
         step3_time = time.time() - start_time
         print(f"   ✅ Completed in {step3_time:.1f}s")
@@ -157,11 +167,19 @@ def _get_music_file(specific_music_path: Optional[str] = None) -> Optional[str]:
     # Use the first available music file
     return music_files[0]
 
-def _get_development_videos(fast_test: bool = False) -> List[str]:
+def _get_development_videos(fast_test: bool = False, input_dir: Optional[str] = None) -> List[str]:
     """Get development videos for processing, with fast-test option."""
-    input_dev_dir = Path("input_dev")
+    if input_dir and input_dir != "input":
+        # For custom directories, look in input_dev/{dirname}/
+        source_path = Path(input_dir)
+        source_dir_name = source_path.name
+        input_dev_dir = Path("input_dev") / source_dir_name
+    else:
+        # For default "input" directory, use input_dev directly
+        input_dev_dir = Path("input_dev")
+    
     if not input_dev_dir.exists():
-        print("❌ input_dev/ directory not found")
+        print(f"❌ Development video directory not found: {input_dev_dir}")
         return []
     
     video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.MP4', '.MOV']

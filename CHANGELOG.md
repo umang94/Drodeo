@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Audio-Free Pipeline**: Implemented complete audio-free operation while preserving music overlay capability
+  - Modified `src/core/gemini_multimodal_analyzer.py` to remove audio processing from Gemini analysis
+  - Enhanced multimodal prompt with UDIO prompt generation and longer video duration preference
+  - Updated `src/core/pipeline.py` to enable automatic music file discovery
+  - Simplified music overlay in `src/editing/video_editor.py` to basic functionality
+  - Created comprehensive implementation plan in `docs/AUDIO_FREE_PIPELINE_IMPLEMENTATION_PLAN.md`
+
 - **Simplified Main Interface**: Created `main.py` with built-in validation and smart caching
   - Environment validation (API keys, dependencies)
   - Directory structure validation
@@ -25,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Replaces functionality from `test_two_step_pipeline.py`
 
 ### Changed
+- **Audio-Free Architecture**: Transformed Drodeo to remove audio processing from Gemini analysis
+  - Updated `SYSTEM_ARCHITECTURE.md` to version 4.2.0 with audio-free documentation
+  - Modified `README.md` to reflect video-only analysis with optional music overlay
+  - Moved `create_dev_videos.py` to `scripts/` directory for better organization
+  - Removed optional audio-related API keys from configuration documentation
+
 - **Simplified Video Editor**: Refactored `src/editing/video_editor.py`
   - Reduced from ~1200 to ~250 lines (79% reduction)
   - Removed legacy methods: `create_from_multimodal_analysis()`, `create_music_driven_video()`, `_create_sync_plan_video()`, `_create_traditional_video()`

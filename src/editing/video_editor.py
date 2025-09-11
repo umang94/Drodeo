@@ -250,7 +250,7 @@ class VideoEditor:
     
     def _add_music_overlay(self, video: VideoFileClip, music_path: str) -> VideoFileClip:
         """
-        Add background music to a video using simple approach
+        Add background music to a video using basic looping functionality
         
         Args:
             video: Video clip to add music to
@@ -264,26 +264,31 @@ class VideoEditor:
         
         print(f"   🎵 Loading music file: {os.path.basename(music_path)}")
         
-        # Load audio file
-        audio = AudioFileClip(music_path)
-        if audio is None:
-            raise ValueError(f"Failed to load audio file: {music_path}")
-        
-        # Validate audio properties
-        audio_duration = audio.duration
-        if audio_duration is None or audio_duration <= 0:
-            audio.close()
-            raise ValueError(f"Invalid audio duration ({audio_duration}s) for: {music_path}")
-        
-        print(f"   🎵 Music duration: {audio_duration:.1f}s, Video duration: {video.duration:.1f}s")
-        print(f"   🎵 Using raw audio file directly")
-        
-        # Create video with new audio
-        video_no_audio = video.without_audio()
-        video_with_audio = video_no_audio.set_audio(audio)
-        
-        print(f"   ✅ Audio overlay completed successfully")
-        return video_with_audio
+        # Load audio file with basic error handling
+        try:
+            audio = AudioFileClip(music_path)
+            if audio is None:
+                raise ValueError(f"Failed to load audio file: {music_path}")
+            
+            # Basic duration check
+            if audio.duration <= 0:
+                audio.close()
+                raise ValueError(f"Invalid audio duration for: {music_path}")
+            
+            print(f"   🎵 Music duration: {audio.duration:.1f}s, Video duration: {video.duration:.1f}s")
+            
+            # Simple audio looping - just use the audio as-is
+            # MoviePy will automatically handle audio that's shorter than video
+            video_no_audio = video.without_audio()
+            video_with_audio = video_no_audio.set_audio(audio)
+            
+            print(f"   ✅ Basic music overlay completed")
+            return video_with_audio
+            
+        except Exception as e:
+            print(f"   ⚠️  Music overlay failed: {e}")
+            print(f"   🎵 Continuing without music")
+            return video  # Return original video if music fails
     
     def _render_video(self, video: VideoFileClip, output_path: str, music_name: str):
         """

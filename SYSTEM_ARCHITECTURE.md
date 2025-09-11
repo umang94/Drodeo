@@ -1,12 +1,12 @@
 # Drodeo System Architecture
 
-**Version:** 4.1.0  
+**Version:** 4.2.0  
 **Last Updated:** September 7, 2025  
 **Status:** Production Ready
 
 ## System Overview
 
-Drodeo is a music video generation system that uses a two-step Gemini pipeline to analyze audio and video content for synchronized video creation.
+Drodeo is a video content generation system that uses a two-step Gemini pipeline to analyze video content with optional music overlay for video creation.
 
 ### System Design Diagram
 ```
@@ -47,14 +47,14 @@ Drodeo is a music video generation system that uses a two-step Gemini pipeline t
 
 ### Input Layer
 - **Music Input**: Audio files in `music/` directory (MP3, M4A, WAV formats)
-- **Video Input**: Video files in `input/` directory (MP4, MOV formats)  
-- **Development Videos**: Downsampled versions in `input_dev/` for testing
+- **Video Input**: Video files in `input/` directory or any custom directory specified via the `--input-dir` command-line option (MP4, MOV formats)  
+- **Development Videos**: Downsampled versions in `input_dev/` for default input, or `input_dev/{source_folder_name}/` for custom directories
 
 ### Analysis Layer
 #### Gemini Multimodal Analyzer (`src/core/gemini_multimodal_analyzer.py`)
-- Analyzes audio duration, BPM, and musical structure
-- Processes video content and scene characteristics
-- Generates natural language analysis output
+- Analyzes video content and scene characteristics (video-only analysis)
+- Generates UDIO prompts for music generation based on video content
+- Provides natural language analysis output focused on visual elements
 
 #### Gemini Self-Translator (`src/core/gemini_self_translator.py`)
 - Converts natural language analysis into structured JSON
@@ -65,8 +65,9 @@ Drodeo is a music video generation system that uses a two-step Gemini pipeline t
 #### Video Editor (`src/editing/video_editor.py`)
 - Processes JSON instructions from Gemini analysis
 - Loads and validates video clips with timestamp checking
-- Implements simplified audio overlay without complex processing
+- Implements basic music overlay functionality (optional)
 - Handles video concatenation and rendering
+- Gracefully handles music loading failures
 
 ### Output Layer
 - Generated videos saved to `output/` directory
@@ -98,21 +99,25 @@ Drodeo is a music video generation system that uses a two-step Gemini pipeline t
 
 ## Data Flow
 
-1. **Input Scanning**: Music and video files are scanned from respective directories
-2. **Multimodal Analysis**: Gemini analyzes audio and video content together
+1. **Input Scanning**: Video files are scanned from input directories, music files are optionally discovered
+2. **Multimodal Analysis**: Gemini performs video-only analysis and generates UDIO prompts
 3. **Self-Translation**: Gemini converts analysis into structured JSON format
 4. **Video Editing**: JSON instructions are processed to create video segments
-5. **Rendering**: Final video is rendered with music overlay
-6. **Output**: Completed video is saved to output directory
+5. **Music Overlay**: Optional background music is added using basic overlay functionality
+6. **Rendering**: Final video is rendered with or without audio
+7. **Output**: Completed video is saved to output directory
 
 ## Configuration
 
 ### Environment Variables (`.env`)
 ```bash
 GEMINI_API_KEY=your_gemini_api_key_here
-FREESOUND_API_KEY=your_freesound_api_key_here  # Optional
-OPENAI_API_KEY=your_openai_api_key_here        # Optional
 ```
+
+### Command-Line Options
+- `--fast-test`: Enable fast testing mode with limited videos
+- `--force-setup`: Force recreation of development videos
+- `--input-dir PATH`: Specify a custom directory containing video files for processing. Development videos are cached in `input_dev/{dirname}/`
 
 ### Runtime Configuration (`src/utils/config.py`)
 - Video processing settings (resolution, frame rates, durations)
@@ -137,6 +142,7 @@ src/
 ### Development Practices
 - Use `input_dev/` videos for all development and testing
 - Run `python main.py --fast-test` for quick validation
+- Use `python main.py --input-dir my_videos` to test with videos from custom directories
 - Test individual components before full pipeline execution
 - Maintain documentation consistency with code changes
 

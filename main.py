@@ -9,6 +9,7 @@ Usage:
     python main.py                 # Normal operation with cached videos
     python main.py --fast-test     # Fast testing with limited videos
     python main.py --force-setup   # Force recreation of development videos
+    python main.py --input-dir DIR # Process videos from custom directory
 """
 
 import os
@@ -31,8 +32,20 @@ def main():
                        help='Fast test mode with limited videos (3 videos max)')
     parser.add_argument('--force-setup', action='store_true',
                        help='Force recreation of development videos (ignore cache)')
+    parser.add_argument('--input-dir', type=str, default='input',
+                       help='Custom directory containing video files (default: input)')
     
     args = parser.parse_args()
+    
+    # Resolve input directory path
+    input_dir_path = Path(args.input_dir)
+    if not input_dir_path.exists():
+        print(f"❌ Input directory not found: {input_dir_path}")
+        sys.exit(1)
+    
+    if not input_dir_path.is_dir():
+        print(f"❌ Input path is not a directory: {input_dir_path}")
+        sys.exit(1)
     
     print("🎬 Drodeo Main - Simplified & Reliable")
     print("=" * 50)
@@ -57,14 +70,14 @@ def main():
     
     # Step 3: Smart Video Setup (cached by default)
     print("\n🎥 Step 3: Video Setup (smart caching)...")
-    if not setup_development_videos(force=args.force_setup):
-        print("❌ Video setup failed. Please check input/ directory and FFmpeg installation.")
+    if not setup_development_videos(force=args.force_setup, source_dir=str(input_dir_path)):
+        print("❌ Video setup failed. Please check the input directory and FFmpeg installation.")
         sys.exit(1)
     print("   ✅ Video setup completed")
     
     # Step 4: Run Two-Step Pipeline
     print("\n🚀 Step 4: Starting Two-Step Gemini Pipeline...")
-    success = run_two_step_pipeline(fast_test=args.fast_test)
+    success = run_two_step_pipeline(fast_test=args.fast_test, input_dir=str(input_dir_path))
     
     if success:
         print("\n✅ Pipeline completed successfully!")
