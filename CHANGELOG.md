@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Blank-Frame-Free Architecture**: Implemented seamless video concatenation without blank frames
+  - Created `_concatenate_video_batch_no_blanks()` function for direct video joining
+  - Updated `create_mapping_from_concatenation()` to handle zero blank frame duration
+  - Enhanced timestamp translation to work with accurate video durations
+  - Modified multimodal analyzer prompt for single concatenated video analysis
+
+- **Timestamp Mapping System**: Implemented comprehensive timestamp translation between concatenated and original videos
+  - Created `src/core/video_mapping.py` with `VideoBatchMapping` class and utility functions
+  - Added `translate_gemini_timestamps()` to convert concatenated video timestamps to original video references
+  - Implemented `extract_timestamps_from_reasoning()` for parsing Gemini response timestamps
+  - Enhanced self-translation prompt with explicit timestamp interpretation instructions
+
+- **Large-Scale Batch Processing**: Enhanced pipeline to handle 30-50+ videos efficiently
+  - Added `--max-videos` parameter to control processing limits
+  - Improved video discovery with efficient `os.walk()` and early termination
+  - Enhanced error handling for API quota limits with graceful fallback
+  - Added robust video duration validation and clamping
+
+- **Batch Video Processing**: Implemented support for processing more than 10 input videos
+  - Added intelligent video batching with concatenation (now blank-frame-free)
+  - Created `_create_video_batches()`, `_concatenate_video_batch_no_blanks()`, and `_process_video_batches()` functions in `src/core/pipeline.py`
+  - Removed `create_blank_clip()` method from `src/editing/video_editor.py` as it's no longer needed
+  - Implemented automatic temporary file cleanup with `_cleanup_temporary_files()`
+  - Created comprehensive implementation plan in `docs/BATCH_VIDEO_PROCESSING_IMPLEMENTATION_PLAN.md`
+
 - **Audio-Free Pipeline**: Implemented complete audio-free operation while preserving music overlay capability
   - Modified `src/core/gemini_multimodal_analyzer.py` to remove audio processing from Gemini analysis
   - Enhanced multimodal prompt with UDIO prompt generation and longer video duration preference
@@ -50,6 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preserved `batch_video_generator.py` for unique batch processing features
 
 ### Fixed
+- **Timestamp Interpretation Bug**: Fixed critical issue where Gemini's creative timeline timestamps were incorrectly interpreted as concatenated video positions instead of original video positions
+  - Root cause: Self-translation was applying concatenated video timestamps to individual source videos, causing all clips to reference the same video with invalid timestamps
+  - Solution: Enhanced self-translation prompt with explicit timestamp interpretation instructions and implemented comprehensive timestamp mapping system
+  - Added timestamp validation and clamping to prevent "End time > video duration" warnings
+  - Files modified: `src/core/gemini_self_translator.py`, `src/core/video_mapping.py`, `src/editing/video_editor.py`
+
 - **Critical Audio Bug**: Fixed issue where generated videos were missing audio tracks in the end-to-end pipeline
   - Root cause: MoviePy's complex audio processing pipeline was failing with FFmpeg subprocess errors when using `volumex()`, `CompositeAudioClip`, and fade effects
   - Solution: Implemented simplified audio overlay approach in `VideoEditor._add_music_overlay()` that uses raw audio files directly without complex processing
@@ -58,6 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Files modified: `src/editing/video_editor.py`, `src/core/gemini_self_translator.py`
 
 ### Technical Details
+- **Timestamp Mapping**: Implemented global-to-local timestamp conversion to properly interpret Gemini's creative timeline
+- **Video Duration Validation**: Added robust timestamp clamping to respect individual video durations
+- **API Quota Handling**: Enhanced graceful fallback for Gemini API quota limits
 - Removed complex audio processing that was causing `'NoneType' object has no attribute 'stdout'` FFmpeg errors
 - Simplified audio overlay to use `video.without_audio().set_audio(audio)` approach
 - Added proper None handling for audio duration in self-translation prompts

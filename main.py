@@ -34,6 +34,8 @@ def main():
                        help='Force recreation of development videos (ignore cache)')
     parser.add_argument('--input-dir', type=str, default='input',
                        help='Custom directory containing video files (default: input)')
+    parser.add_argument('--max-videos', type=int, default=5,
+                       help='Maximum number of videos to process (default: 5)')
     
     args = parser.parse_args()
     
@@ -53,6 +55,7 @@ def main():
     print("📊 Built-in Validation & Smart Caching")
     print(f"🚀 Fast test mode: {'✅ Enabled' if args.fast_test else '❌ Disabled'}")
     print(f"🔄 Force setup: {'✅ Enabled' if args.force_setup else '❌ Disabled'}")
+    print(f"📹 Max videos: {args.max_videos}")
     
     # Step 1: Environment Validation
     print("\n🔍 Step 1: Environment Validation...")
@@ -77,7 +80,11 @@ def main():
     
     # Step 4: Run Two-Step Pipeline
     print("\n🚀 Step 4: Starting Two-Step Gemini Pipeline...")
-    success = run_two_step_pipeline(fast_test=args.fast_test, input_dir=str(input_dir_path))
+    success = run_two_step_pipeline(
+        fast_test=args.fast_test, 
+        input_dir=str(input_dir_path),
+        max_videos=args.max_videos
+    )
     
     if success:
         print("\n✅ Pipeline completed successfully!")

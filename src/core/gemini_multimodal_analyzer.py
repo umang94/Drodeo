@@ -58,33 +58,42 @@ class GeminiMultimodalAnalyzer:
     """Analyzes multiple videos using Gemini's multimodal capabilities (audio-free)"""
     
     def __init__(self):
-        """Initialize Gemini multimodal analyzer."""
+        """Initialize Gemini multimodal analyzer with lazy initialization."""
         self.model = None
+        self._initialized = False
         
         if not GEMINI_AVAILABLE:
             print("   ⚠️  Gemini API library not available")
             return
         
-        try:
-            # Configure Gemini API
-            api_key = os.getenv('GEMINI_API_KEY')
-            if not api_key:
-                print("   ⚠️  GEMINI_API_KEY not found in environment variables")
-                return
-            
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
-            
-            print("   ✅ Gemini multimodal analyzer initialized")
-                
-        except Exception as e:
-            logger.error(f"Failed to initialize Gemini: {e}")
-            print(f"   ❌ Gemini initialization failed: {e}")
-            self.model = None
+        # Lazy initialization - don't check API key until actually needed
+        print("   ✅ Gemini multimodal analyzer initialized (lazy loading)")
     
     def is_available(self) -> bool:
         """Check if Gemini API is available and configured."""
-        return GEMINI_AVAILABLE and self.model is not None
+        if not GEMINI_AVAILABLE:
+            return False
+        
+        # Lazy initialization - configure Gemini only when needed
+        if self.model is None:
+            try:
+                # Configure Gemini API
+                api_key = os.getenv('GEMINI_API_KEY')
+                if not api_key:
+                    print("   ⚠️  GEMINI_API_KEY not found in environment variables")
+                    return False
+                
+                genai.configure(api_key=api_key)
+                self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+                print("   ✅ Gemini API configured successfully")
+                
+            except Exception as e:
+                logger.error(f"Failed to configure Gemini: {e}")
+                print(f"   ❌ Gemini configuration failed: {e}")
+                self.model = None
+                return False
+        
+        return self.model is not None
     
     def analyze_batch(self, video_paths: List[str], 
                      test_name: str = "Video Content Generation") -> Optional[MultimodalAnalysisResult]:
@@ -159,28 +168,31 @@ class GeminiMultimodalAnalyzer:
             return None
     
     def _upload_video_to_gemini(self, video_path: str):
-        """Upload single video to Gemini API"""
+        """Upload single video to Gemini API with extended timeout for large files"""
         try:
             # Upload file
             uploaded_file = genai.upload_file(path=video_path)
             
-            # Wait for processing
-            max_wait = 30
+            # Wait for processing with extended timeout for large files
+            max_wait = 120  # 2 minutes for large concatenated videos
             elapsed = 0
             
             while uploaded_file.state.name == "PROCESSING" and elapsed < max_wait:
-                time.sleep(1)
-                elapsed += 1
+                time.sleep(2)  # Check less frequently
+                elapsed += 2
                 uploaded_file = genai.get_file(uploaded_file.name)
+                if elapsed % 10 == 0:  # Print status every 10 seconds
+                    print(f"            Still processing... ({elapsed}s elapsed)")
             
             if uploaded_file.state.name == "ACTIVE":
+                print(f"            ✅ Upload complete after {elapsed}s")
                 return uploaded_file
             else:
-                print(f"            File processing failed: {uploaded_file.state.name}")
+                print(f"            ❌ File processing failed: {uploaded_file.state.name} after {elapsed}s")
                 return None
                 
         except Exception as e:
-            print(f"            Upload error: {e}")
+            print(f"            ❌ Upload error: {e}")
             return None
     
     def _analyze_video_only_with_gemini(self, uploaded_videos: List[Dict], test_name: str) -> Optional[MultimodalAnalysisResult]:
@@ -233,54 +245,57 @@ class GeminiMultimodalAnalyzer:
             return None
 
     def _create_video_only_prompt(self, uploaded_videos: List[Dict], test_name: str) -> str:
-        """Create video-only prompt with UDIO generation request and longer video preference"""
+        """Create video-only prompt for single concatenated video analysis"""
         
         video_names = [v['name'] for v in uploaded_videos]
         
         prompt = f"""
 VIDEO-ONLY CONTENT ANALYSIS: {test_name}
 
-**CRITICAL:** You have been provided with {len(uploaded_videos)} video files. Please analyze them to create an engaging video compilation.
+**CRITICAL:** You have been provided with a SINGLE CONCATENATED VIDEO that contains multiple source videos seamlessly joined together. Please analyze this video to create an engaging compilation.
+
+**IMPORTANT ARCHITECTURAL NOTE:** This is a single concatenated video file that contains multiple source videos. All timestamps you reference should be relative to this single concatenated video timeline.
 
 **STEP 1 - VIDEO ANALYSIS:**
-Analyze each video source:
-{chr(10).join([f'- {i+1}. {name}: Visual content, duration, scene changes, energy level, pacing' for i, name in enumerate(video_names)])}
+Analyze the concatenated video as a single continuous timeline:
+- Visual content and scene changes throughout the video
+- Energy level progression and pacing
+- Natural transition points and visual flow
+- Duration and overall structure
 
 **STEP 2 - CONTENT SYNCHRONIZATION PLAN:**
-Create a detailed timeline that maximizes the use of available footage and attempts for the longest possible output video:
+Create a detailed timeline that maximizes the use of available footage:
 
 1. **COMPELLING HOOK:**
-   - Select the most engaging opening clip from any video
-   - Specify exact video source and timestamp
+   - Select the most engaging opening segment from the concatenated video
+   - Specify exact timestamp within the concatenated video
    - Create visual intrigue to capture attention
 
 2. **CONTENT FLOW ALIGNMENT:**
-   For optimal viewing experience, analyse:
-   - Which video sources provide the best visual continuity
-   - Exact timestamps for optimal clips from EACH video
+   For optimal viewing experience, analyze:
+   - Which segments provide the best visual continuity
+   - Exact timestamps for optimal clips within the concatenated video
    - Energy level progression throughout the video
    - Natural transition points based on visual flow
 
-3. **CROSS-VIDEO CLIP SELECTION:**
-   For EACH video source, identify specific clips with:
-   - Video name and exact timestamps (start-end in seconds)
+3. **CLIP SELECTION:**
+   Identify specific clips with:
+   - Exact timestamps (start-end in seconds) within the concatenated video
    - How each clip contributes to the overall narrative
    - Energy level and visual characteristics
    - Recommended placement in the overall sequence
-   - Look for multiple clips within the same input video
-   -Always ensure start_time and end_time are within the actual video duration
+   - Look for multiple engaging segments throughout the video
 
 4. **CLIP SELECTION GUIDANCE:**
-   - **Clips can start from ANY timestamp within the video, not just 0:00**
+   - **Clips can start from ANY timestamp within the concatenated video, not just 0:00**
    - **Select the most visually engaging segments regardless of their position in the timeline**
    - **Always ensure start_time and end_time are within the actual video duration**
    - **Prefer content-rich segments over arbitrary beginning/end points**
-   - **Look for multiple clips within the same input video**
 
 5. **TRANSITION RECOMMENDATIONS:**
    - Specify transition points that maintain visual flow
    - Match visual movement and composition between clips
-   - Create seamless flow between different video sources
+   - Create seamless flow between different segments
 
 **STEP 3 - UDIO AUDIO PROMPT GENERATION:**
 Based on the visual content and pacing, create a concise UDIO prompt for generating matching audio:
@@ -300,7 +315,7 @@ Then provide the complete video analysis with precise timestamps.
 Include your UDIO prompt suggestion at the end as:
 "UDIO_PROMPT: [your concise audio prompt suggestion]"
 
-**GOAL:** Create an engaging video compilation that makes optimal use of all available footage. It also  provides a matching audio suggestion for manual generation.
+**GOAL:** Create an engaging video compilation that makes optimal use of all available footage. It also provides a matching audio suggestion for manual generation.
 """
         
         return prompt

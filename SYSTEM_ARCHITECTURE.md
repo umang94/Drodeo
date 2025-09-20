@@ -1,12 +1,12 @@
 # Drodeo System Architecture
 
-**Version:** 4.2.0  
-**Last Updated:** September 7, 2025  
+**Version:** 4.3.0  
+**Last Updated:** September 13, 2025  
 **Status:** Production Ready
 
 ## System Overview
 
-Drodeo is a video content generation system that uses a two-step Gemini pipeline to analyze video content with optional music overlay for video creation.
+Drodeo is a video content generation system that uses a two-step Gemini pipeline to analyze video content with optional music overlay for video creation. The system intelligently handles large video collections by automatically batching and concatenating videos when more than 10 videos are provided.
 
 ### System Design Diagram
 ```
@@ -42,6 +42,7 @@ Drodeo is a video content generation system that uses a two-step Gemini pipeline
 - **Video Processing**: MoviePy-based video editing and rendering
 - **Validation System**: Environment and directory validation
 - **Batch Processing**: Support for multiple music tracks
+- **Timestamp Mapping**: Translation between concatenated and original video timestamps
 
 ## Architecture
 
@@ -60,6 +61,7 @@ Drodeo is a video content generation system that uses a two-step Gemini pipeline
 - Converts natural language analysis into structured JSON
 - Provides MoviePy-compatible editing instructions
 - Includes timestamp validation and error handling
+- Handles timestamp interpretation from concatenated to original video references
 
 ### Editing Layer
 #### Video Editor (`src/editing/video_editor.py`)
@@ -97,6 +99,13 @@ Drodeo is a video content generation system that uses a two-step Gemini pipeline
 - Maintains session logging and reporting
 - Supports both development and production video modes
 
+### Video Batching System
+- **Intelligent Batching**: Automatically groups videos into batches of up to 10 when more than 10 videos are provided
+- **Concatenation with Blank Frames**: Creates temporary concatenated videos with 1-second blank frames between original videos
+- **Temporary File Management**: Automatically creates and cleans up temporary concatenated video files
+- **Result Aggregation**: Combines analysis results from multiple batches for unified self-translation
+- **Timestamp Mapping**: Translates concatenated video timestamps back to original video references using `src/core/video_mapping.py`
+
 ## Data Flow
 
 1. **Input Scanning**: Video files are scanned from input directories, music files are optionally discovered
@@ -131,7 +140,8 @@ GEMINI_API_KEY=your_gemini_api_key_here
 src/
 ├── core/           # Core analysis components
 │   ├── gemini_multimodal_analyzer.py
-│   └── gemini_self_translator.py
+│   ├── gemini_self_translator.py
+│   └── video_mapping.py      # Timestamp translation system
 ├── editing/        # Video editing components
 │   └── video_editor.py
 └── utils/          # Shared utilities

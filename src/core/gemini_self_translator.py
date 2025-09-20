@@ -193,6 +193,7 @@ Convert the creative timeline above into precise JSON editing instructions EXACT
 7. **Energy Matching:** Map creative descriptions to energy levels
 8. **MoviePy Compatible:** All parameters must work with MoviePy 1.0.3
 9. **RESPECT VIDEO DURATIONS:** Always check that start_time and end_time are within each video's actual duration
+10. **TIMESTAMP INTERPRETATION:** The timestamps in this creative timeline have already been translated from concatenated video positions to original video references. For example, "DJI_0424_dev.MP4 at 0.0s" means use the video file DJI_0424_dev.MP4 starting from 0.0 seconds.
 
 **JSON STRUCTURE:**
 Follow this exact structure:

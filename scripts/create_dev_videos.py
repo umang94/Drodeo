@@ -145,15 +145,23 @@ def main():
     # Create output directory if it doesn't exist
     output_dir.mkdir(exist_ok=True)
     
-    # Find video files in input directory
+    # Find video files in input directory (recursive search)
     video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.MP4', '.MOV', '.AVI', '.MKV']
     video_files = []
     
     for ext in video_extensions:
-        video_files.extend(input_dir.glob(f"*{ext}"))
+        video_files.extend(input_dir.rglob(f"*{ext}"))
     
-    # Filter out subdirectories and files that are already dev versions
+    # Filter out directories and files that are already dev versions
     video_files = [f for f in video_files if f.is_file() and not f.stem.endswith('_dev')]
+    
+    # Preserve directory structure in output
+    video_files_with_relative_paths = []
+    for video_file in video_files:
+        relative_path = video_file.relative_to(input_dir)
+        video_files_with_relative_paths.append((video_file, relative_path))
+    
+    video_files = video_files_with_relative_paths
     
     if not video_files:
         print(f"❌ No video files found in {input_dir}")
@@ -166,8 +174,8 @@ def main():
     skipped_count = 0
     failed_count = 0
     
-    for video_file in video_files:
-        print(f"\n📹 Processing: {video_file.name}")
+    for video_file, relative_path in video_files:
+        print(f"\n📹 Processing: {relative_path}")
         
         # Get video info
         width, height, duration = get_video_info(str(video_file))
@@ -175,9 +183,11 @@ def main():
             file_size = video_file.stat().st_size / (1024 * 1024)  # MB
             print(f"   📊 Original: {width}x{height}, {duration:.1f}s, {file_size:.1f}MB")
         
-        # Generate output filename
+        # Generate output filename with preserved directory structure
         dev_filename = get_dev_filename(video_file.name)
-        output_path = output_dir / dev_filename
+        output_subdir = output_dir / relative_path.parent
+        output_subdir.mkdir(parents=True, exist_ok=True)
+        output_path = output_subdir / dev_filename
         
         # Check if output already exists
         if output_path.exists() and not args.force:

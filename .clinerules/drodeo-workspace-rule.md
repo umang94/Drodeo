@@ -9,3 +9,11 @@
 ## General Instructions
 
 - Adhere to the guidelines  for development, testing, debugging captured in SYSTEM_ARCHITECTURE.md. 
+
+- Do not repeat yourself
+
+- Propose simple solutions
+
+- Reuse and repair previous code wherever applicable. 
+
+- keep things simple

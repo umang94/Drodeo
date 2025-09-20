@@ -4,7 +4,7 @@ A system for generating videos using Gemini's multimodal analysis with optional 
 
 ## Overview
 
-Drodeo processes video content through a two-step Gemini pipeline to create videos with optional music synchronization.
+Drodeo processes video content through a two-step Gemini pipeline to create videos with optional music synchronization. The system intelligently handles large video collections by automatically batching and concatenating videos when more than 10 videos are provided.
 
 ## Quick Start
 
@@ -39,11 +39,8 @@ python main.py --input-dir my_videos --fast-test
 # Force recreation of development videos
 python main.py --input-dir my_videos --force-setup
 
-# Batch processing for multiple tracks
-python batch_video_generator.py
-
-# Generate music prompts from video content
-python generate_music_prompt.py input_dev/*.mp4
+# Limit number of videos processed (default: 5)
+python main.py --max-videos 30
 
 # Create development videos (moved to scripts/)
 python scripts/create_dev_videos.py
@@ -68,7 +65,8 @@ GEMINI_API_KEY=your_gemini_api_key_here
 src/
 ├── core/                    # Core analysis components
 │   ├── gemini_multimodal_analyzer.py
-│   └── gemini_self_translator.py
+│   ├── gemini_self_translator.py
+│   └── video_mapping.py     # Timestamp translation system
 ├── editing/                 # Video editing
 │   └── video_editor.py
 └── utils/                   # Configuration and logging
@@ -87,7 +85,7 @@ For technical information and development guidelines, see:
 
 - Use `input_dev/` videos for development
 - Run `python main.py --fast-test` for quick testing
-- Use `python batch_video_generator.py` for batch processing
+- Use `python main.py --max-videos N` for batch processing with specific limits
 
 ## License
 

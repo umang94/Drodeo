@@ -84,14 +84,27 @@ def validate_directories():
                 print(f"❌ Failed to create {dir_name}/ directory: {e}")
                 all_valid = False
     
-    # Check if input directory has videos
+    # Check if input directory has videos (recursive search)
     input_dir = Path("input")
     if input_dir.exists():
-        video_files = list(input_dir.glob("*.[mM][pP][4]")) + list(input_dir.glob("*.[mM][oO][vV]"))
+        video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.MP4', '.MOV', '.AVI', '.MKV']
+        video_files = []
+        
+        # Recursively search for video files
+        for ext in video_extensions:
+            video_files.extend(input_dir.rglob(f"*{ext}"))
+        
+        # Filter out directories and only keep files
+        video_files = [f for f in video_files if f.is_file()]
+        
         if not video_files:
             print("   ⚠️  input/ directory is empty - add video files for processing")
         else:
-            print(f"   ✅ Found {len(video_files)} video files in input/")
+            print(f"   ✅ Found {len(video_files)} video files in input/ (recursive search)")
+            # Show directory structure if multiple subdirectories found
+            subdirs = {f.parent for f in video_files if f.parent != input_dir}
+            if subdirs:
+                print(f"      📁 Found videos in {len(subdirs)} subdirectories")
     
     # Check if music directory has audio files
     music_dir = Path("music")
@@ -130,14 +143,23 @@ def setup_development_videos(force=False, source_dir="input"):
     
     input_dir = source_path
     
-    # Check if input directory exists and has videos
+    # Check if input directory exists and has videos (recursive search)
     if not input_dir.exists():
         print("   ⚠️  input/ directory not found - no videos to process")
         return True
     
-    video_files = list(input_dir.glob("*.[mM][pP][4]")) + list(input_dir.glob("*.[mM][oO][vV]"))
+    # Recursively search for video files
+    video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.MP4', '.MOV', '.AVI', '.MKV']
+    video_files = []
+    
+    for ext in video_extensions:
+        video_files.extend(input_dir.rglob(f"*{ext}"))
+    
+    # Filter out directories and only keep files
+    video_files = [f for f in video_files if f.is_file()]
+    
     if not video_files:
-        print("   ⚠️  No video files found in input/ directory")
+        print("   ⚠️  No video files found in input/ directory (recursive search)")
         return True
     
     # Check if development videos already exist
