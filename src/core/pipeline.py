@@ -18,16 +18,15 @@ from src.core.gemini_self_translator import GeminiSelfTranslator
 from src.core.video_mapping import VideoBatchMapping, translate_gemini_timestamps
 from src.editing.video_editor import VideoEditor
 
-def run_two_step_pipeline(fast_test: bool = False, music_path: Optional[str] = None, 
-                         input_dir: Optional[str] = None, max_videos: int = 5) -> bool:
+def run_two_step_pipeline(music_path: Optional[str] = None, 
+                         input_dir: Optional[str] = None, max_videos: int = 30) -> bool:
     """
     Run the complete two-step Gemini pipeline with validation and error handling.
     
     Args:
-        fast_test: If True, limits processing for faster testing
         music_path: Optional specific music file to process
         input_dir: Optional custom directory containing video files
-        max_videos: Maximum number of videos to process (default: 5)
+        max_videos: Maximum number of videos to process (default: 30)
     
     Returns:
         bool: True if pipeline completed successfully, False otherwise
@@ -41,7 +40,7 @@ def run_two_step_pipeline(fast_test: bool = False, music_path: Optional[str] = N
     music_file = _get_music_file(music_path)
     
     # Get available development videos with max limit
-    video_files = _get_development_videos(fast_test, input_dir, max_videos)
+    video_files = _get_development_videos(input_dir, max_videos)
     if not video_files:
         return False
     
@@ -206,9 +205,9 @@ def _get_music_file(specific_music_path: Optional[str] = None) -> Optional[str]:
     # Use the first available music file
     return music_files[0]
 
-def _get_development_videos(fast_test: bool = False, input_dir: Optional[str] = None, 
-                          max_videos: int = 5) -> List[str]:
-    """Get development videos for processing, with fast-test option and max limit."""
+def _get_development_videos(input_dir: Optional[str] = None, 
+                          max_videos: int = 30) -> List[str]:
+    """Get development videos for processing with max limit."""
     if input_dir and input_dir != "input":
         # For custom directories, look in input_dev/{dirname}/
         source_path = Path(input_dir)
@@ -247,12 +246,6 @@ def _get_development_videos(fast_test: bool = False, input_dir: Optional[str] = 
     
     # Sort for consistent ordering
     video_files.sort()
-    
-    if fast_test:
-        # Limit to 3 videos for fast testing
-        limited_videos = video_files[:3]
-        print(f"   🚀 Fast test mode: Using {len(limited_videos)} videos")
-        return limited_videos
     
     # Apply max_videos limit
     if len(video_files) > max_videos:
@@ -462,5 +455,5 @@ def _process_video_batches(video_files: List[str], analyzer: GeminiMultimodalAna
 
 if __name__ == "__main__":
     # Test the pipeline
-    success = run_two_step_pipeline(fast_test=True)
+    success = run_two_step_pipeline()
     print(f"\nPipeline test result: {'✅ SUCCESS' if success else '❌ FAILED'}")

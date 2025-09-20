@@ -17,14 +17,22 @@ Drodeo processes video content through a two-step Gemini pipeline to create vide
 ```bash
 git clone https://github.com/umang94/Drodeo.git
 cd Drodeo
+
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Set up environment
 cp .env.example .env
 # Edit .env and add your GEMINI_API_KEY
 ```
 
 ### Usage
 ```bash
-# Primary interface with built-in validation
+# Primary interface with built-in validation (processes 30 videos by default)
 python main.py
 
 # Process videos from a custom directory
@@ -33,14 +41,11 @@ python main.py --input-dir my_videos
 # Process videos from an absolute path
 python main.py --input-dir /path/to/videos
 
-# Fast testing with custom directory
-python main.py --input-dir my_videos --fast-test
-
 # Force recreation of development videos
 python main.py --input-dir my_videos --force-setup
 
-# Limit number of videos processed (default: 5)
-python main.py --max-videos 30
+# Limit number of videos processed (default: 30)
+python main.py --max-videos 50
 
 # Create development videos (moved to scripts/)
 python scripts/create_dev_videos.py
@@ -84,8 +89,7 @@ For technical information and development guidelines, see:
 ## Development
 
 - Use `input_dev/` videos for development
-- Run `python main.py --fast-test` for quick testing
-- Use `python main.py --max-videos N` for batch processing with specific limits
+- Run `python main.py` for standard testing (processes 30 videos by default)
 
 ## License
 

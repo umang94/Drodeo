@@ -6,10 +6,10 @@ Simplified, reliable entry point with built-in validation and smart caching.
 Integrates the two-step Gemini pipeline directly with robust setup checks.
 
 Usage:
-    python main.py                 # Normal operation with cached videos
-    python main.py --fast-test     # Fast testing with limited videos
+    python main.py                 # Normal operation with cached videos (30 videos default)
     python main.py --force-setup   # Force recreation of development videos
     python main.py --input-dir DIR # Process videos from custom directory
+    python main.py --max-videos N  # Process specific number of videos
 """
 
 import os
@@ -28,14 +28,12 @@ from src.core.pipeline import run_two_step_pipeline
 def main():
     """Main function handling validation and pipeline execution."""
     parser = argparse.ArgumentParser(description='Drodeo Two-Step Pipeline with Validation')
-    parser.add_argument('--fast-test', action='store_true', 
-                       help='Fast test mode with limited videos (3 videos max)')
     parser.add_argument('--force-setup', action='store_true',
                        help='Force recreation of development videos (ignore cache)')
     parser.add_argument('--input-dir', type=str, default='input',
                        help='Custom directory containing video files (default: input)')
-    parser.add_argument('--max-videos', type=int, default=5,
-                       help='Maximum number of videos to process (default: 5)')
+    parser.add_argument('--max-videos', type=int, default=30,
+                       help='Maximum number of videos to process (default: 30)')
     
     args = parser.parse_args()
     
@@ -53,7 +51,6 @@ def main():
     print("=" * 50)
     print("🤖 Two-Step Gemini Pipeline Integration")
     print("📊 Built-in Validation & Smart Caching")
-    print(f"🚀 Fast test mode: {'✅ Enabled' if args.fast_test else '❌ Disabled'}")
     print(f"🔄 Force setup: {'✅ Enabled' if args.force_setup else '❌ Disabled'}")
     print(f"📹 Max videos: {args.max_videos}")
     
@@ -81,7 +78,6 @@ def main():
     # Step 4: Run Two-Step Pipeline
     print("\n🚀 Step 4: Starting Two-Step Gemini Pipeline...")
     success = run_two_step_pipeline(
-        fast_test=args.fast_test, 
         input_dir=str(input_dir_path),
         max_videos=args.max_videos
     )
