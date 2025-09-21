@@ -59,10 +59,13 @@ python scripts/create_dev_videos.py
 
 ## Configuration
 
-Set up your `.env` file:
+Set up your `.env` file (if it doesn't already exist):
 ```bash
-GEMINI_API_KEY=your_gemini_api_key_here
+cp .env.example .env
+# Edit .env and add your GEMINI_API_KEY
 ```
+
+**Note**: If you already have a `.env` file configured with your API keys, do not overwrite it. The system will use your existing configuration.
 
 ## Project Structure
 
