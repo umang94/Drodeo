@@ -431,12 +431,17 @@ Return ONLY the JSON structure. No additional text or explanation."""
                     logger.warning(f"⚠️  Clip {i}: Invalid video path '{video_path}'")
                     return False
                 
-                # Validate timestamps
+                # Validate timestamps with better error handling
                 start_time = clip.get('start_time', 0)
                 end_time = clip.get('end_time', 0)
                 if start_time >= end_time:
                     logger.warning(f"⚠️  Clip {i}: Invalid timestamps {start_time} >= {end_time}")
-                    return False
+                    # Instead of failing completely, fix the timestamps
+                    logger.warning(f"   🔄 Fixing timestamps: using start_time=0, end_time=10")
+                    clip['start_time'] = 0.0
+                    clip['end_time'] = 10.0
+                    # Don't return False - continue with fixed timestamps
+                    # return False
             
             # Validate audio sync settings
             audio_sync = instructions.audio_sync

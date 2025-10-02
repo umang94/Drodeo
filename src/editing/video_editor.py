@@ -20,14 +20,16 @@ logger = logging.getLogger(__name__)
 class VideoEditor:
     """Simplified video editor focused on Gemini two-step pipeline."""
     
-    def __init__(self, output_dir: str = "output"):
+    def __init__(self, output_dir: str = "output", resolution_preset: str = "standard"):
         """
         Initialize the video editor
         
         Args:
             output_dir: Directory to save rendered videos
+            resolution_preset: Resolution preset name ("standard", "high", "ultra")
         """
         self.output_dir = output_dir
+        self.resolution_preset = resolution_preset
         self.ensure_output_directory()
         
     def ensure_output_directory(self):
@@ -395,11 +397,21 @@ class VideoEditor:
         fps = video.fps
         resolution = (video.w, video.h)
         
+        # Apply resolution preset if specified
+        from src.utils.config import get_resolution_from_preset
+        target_resolution = get_resolution_from_preset(self.resolution_preset)
+        
         print(f"   📊 Video properties:")
         print(f"      Duration: {duration:.1f}s")
         print(f"      FPS: {fps}")
-        print(f"      Resolution: {resolution[0]}x{resolution[1]}")
+        print(f"      Original resolution: {resolution[0]}x{resolution[1]}")
+        print(f"      Target resolution: {target_resolution[0]}x{target_resolution[1]} ({self.resolution_preset})")
         print(f"      Audio: {'Yes' if video.audio is not None else 'No'}")
+        
+        # Resize video to target resolution if needed
+        if resolution != target_resolution:
+            print(f"   🔄 Resizing from {resolution[0]}x{resolution[1]} to {target_resolution[0]}x{target_resolution[1]}")
+            video = video.resize(target_resolution)
         
         # Ensure the video has a valid background (fix for NoneType error)
         # This is a more robust fix for the CompositeVideoClip background issue

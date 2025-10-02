@@ -1,10 +1,17 @@
 # Drodeo - Video Content Generation System
 
-A system for generating videos using Gemini's multimodal analysis with optional music overlay.
+A system for generating videos using Gemini's multimodal analysis with optional music overlay. Supports both standard 1080p and high-resolution 4K output modes.
 
 ## Overview
 
 Drodeo processes video content through a two-step Gemini pipeline to create videos with optional music synchronization. The system intelligently handles large video collections by automatically batching and concatenating videos when more than 10 videos are provided.
+
+**Key Features:**
+- Two-step Gemini pipeline for intelligent video analysis and editing
+- High-resolution 4K output support via `--high-res` flag
+- Automatic video batching for large collections
+- Smart caching of development videos for cost-effective processing
+- Audio-free mode for silent video generation
 
 ## Quick Start
 
@@ -46,6 +53,9 @@ python main.py --input-dir my_videos --force-setup
 
 # Limit number of videos processed (default: 30)
 python main.py --max-videos 50
+
+# Enable high-resolution 4K output mode
+python main.py --high-res
 
 # Create development videos (moved to scripts/)
 python scripts/create_dev_videos.py

@@ -19,7 +19,8 @@ from src.core.video_mapping import VideoBatchMapping, translate_gemini_timestamp
 from src.editing.video_editor import VideoEditor
 
 def run_two_step_pipeline(music_path: Optional[str] = None, 
-                         input_dir: Optional[str] = None, max_videos: int = 30) -> bool:
+                         input_dir: Optional[str] = None, max_videos: int = 30,
+                         high_res: bool = False) -> bool:
     """
     Run the complete two-step Gemini pipeline with validation and error handling.
     
@@ -40,7 +41,7 @@ def run_two_step_pipeline(music_path: Optional[str] = None,
     music_file = _get_music_file(music_path)
     
     # Get available development videos with max limit
-    video_files = _get_development_videos(input_dir, max_videos)
+    video_files = _get_development_videos(input_dir, max_videos, high_res)
     if not video_files:
         return False
     
@@ -104,11 +105,15 @@ def run_two_step_pipeline(music_path: Optional[str] = None,
         
         # Step 3: Video Creation
         print("\n🎬 Step 3: Video Creation")
-        editor = VideoEditor()
+        # Set resolution preset based on high-res flag
+        resolution_preset = "ultra" if high_res else "standard"
+        editor = VideoEditor(resolution_preset=resolution_preset)
         
         # Update video paths in instructions to full paths
+        print(f"   📁 Video path resolution (high-res: {high_res}):")
         for clip_data in editing_instructions.clips:
             video_name = clip_data['video_path']
+            print(f"      📹 Processing clip reference: {video_name}")
             
             # Handle concatenated video reference (batch_1_*.mp4) by mapping to original videos
             if video_name.startswith('batch_1_') and video_name.endswith('.mp4'):
@@ -116,23 +121,30 @@ def run_two_step_pipeline(music_path: Optional[str] = None,
                 # For now, use the first original video as fallback
                 if video_files:
                     clip_data['video_path'] = video_files[0]
-                    print(f"   🔄 Mapped concatenated video reference to: {os.path.basename(video_files[0])}")
+                    print(f"         🔄 Mapped concatenated video reference to: {os.path.basename(video_files[0])}")
             else:
+                # If in high-res mode, map low-res names to original names
+                if high_res:
+                    original_name = map_to_high_res_filename(video_name)
+                    video_name = original_name
+                    print(f"         🔄 Mapped low-res to high-res: {video_name}")
+                
                 # Normal video file mapping
                 found = False
                 for full_path in video_files:
                     if os.path.basename(full_path) == video_name:
                         clip_data['video_path'] = full_path
                         found = True
+                        print(f"         ✅ Found: {os.path.basename(full_path)} -> {full_path}")
                         break
                 
                 if not found:
                     # If video not found, use first available video as fallback
                     if video_files:
                         clip_data['video_path'] = video_files[0]
-                        print(f"   ⚠️  Video '{video_name}' not found, using fallback: {os.path.basename(video_files[0])}")
+                        print(f"         ⚠️  Video '{video_name}' not found, using fallback: {os.path.basename(video_files[0])}")
                     else:
-                        print(f"   ❌ No videos available for fallback, cannot proceed")
+                        print(f"         ❌ No videos available for fallback, cannot proceed")
                         return False
         
         start_time = time.time()
@@ -206,55 +218,121 @@ def _get_music_file(specific_music_path: Optional[str] = None) -> Optional[str]:
     return music_files[0]
 
 def _get_development_videos(input_dir: Optional[str] = None, 
-                          max_videos: int = 30) -> List[str]:
+                          max_videos: int = 30, high_res: bool = False) -> List[str]:
     """Get development videos for processing with max limit."""
-    if input_dir and input_dir != "input":
-        # For custom directories, look in input_dev/{dirname}/
-        source_path = Path(input_dir)
-        source_dir_name = source_path.name
-        input_dev_dir = Path("input_dev") / source_dir_name
-    else:
-        # For default "input" directory, use input_dev directly
-        input_dev_dir = Path("input_dev")
-    
-    if not input_dev_dir.exists():
-        print(f"❌ Development video directory not found: {input_dev_dir}")
-        return []
-    
-    video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.MP4', '.MOV', '.AVI', '.MKV']
-    video_files = []
-    
-    # Use os.walk for efficient recursive search with early termination
-    for root, dirs, files in os.walk(str(input_dev_dir)):
-        for file in files:
-            if len(video_files) >= max_videos:
-                break  # Stop searching once we have enough videos
-                
-            file_path = Path(root) / file
-            if file_path.suffix.lower() in [ext.lower() for ext in video_extensions]:
-                video_files.append(str(file_path))
+    if high_res:
+        # For high-res mode, use original videos directly from input directory
+        source_dir = Path(input_dir) if input_dir else Path("input")
         
-        if len(video_files) >= max_videos:
-            break  # Stop directory traversal once we have enough videos
-    
-    # Filter out directories and only keep files
-    video_files = [f for f in video_files if os.path.isfile(f)]
-    
-    if not video_files:
-        print("❌ No development videos found in input_dev/")
-        return []
-    
-    # Sort for consistent ordering
-    video_files.sort()
-    
-    # Apply max_videos limit
-    if len(video_files) > max_videos:
-        video_files = video_files[:max_videos]
-        print(f"   ✅ Found {len(video_files)} videos (limited to {max_videos} as requested)")
+        if not source_dir.exists():
+            print(f"❌ Input directory not found: {source_dir}")
+            return []
+        
+        video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.MP4', '.MOV', '.AVI', '.MKV']
+        video_files = []
+        
+        # Use os.walk for efficient recursive search with early termination
+        for root, dirs, files in os.walk(str(source_dir)):
+            for file in files:
+                if len(video_files) >= max_videos:
+                    break  # Stop searching once we have enough videos
+                    
+                file_path = Path(root) / file
+                if file_path.suffix.lower() in [ext.lower() for ext in video_extensions]:
+                    video_files.append(str(file_path))
+            
+            if len(video_files) >= max_videos:
+                break  # Stop directory traversal once we have enough videos
+        
+        # Filter out directories and only keep files
+        video_files = [f for f in video_files if os.path.isfile(f)]
+        
+        if not video_files:
+            print("❌ No video files found in input directory")
+            return []
+        
+        # Sort for consistent ordering
+        video_files.sort()
+        
+        # Apply max_videos limit
+        if len(video_files) > max_videos:
+            video_files = video_files[:max_videos]
+            print(f"   ✅ Found {len(video_files)} original videos (limited to {max_videos} as requested)")
+        else:
+            print(f"   ✅ Found {len(video_files)} original videos")
+        
+        return video_files
     else:
-        print(f"   ✅ Found {len(video_files)} development videos")
-    
-    return video_files
+        # For normal mode, use development videos from input_dev
+        if input_dir and input_dir != "input":
+            # For custom directories, look in input_dev/{dirname}/
+            source_path = Path(input_dir)
+            source_dir_name = source_path.name
+            input_dev_dir = Path("input_dev") / source_dir_name
+        else:
+            # For default "input" directory, use input_dev directly
+            input_dev_dir = Path("input_dev")
+        
+        if not input_dev_dir.exists():
+            print(f"❌ Development video directory not found: {input_dev_dir}")
+            return []
+        
+        video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.MP4', '.MOV', '.AVI', '.MKV']
+        video_files = []
+        
+        # Use os.walk for efficient recursive search with early termination
+        for root, dirs, files in os.walk(str(input_dev_dir)):
+            for file in files:
+                if len(video_files) >= max_videos:
+                    break  # Stop searching once we have enough videos
+                    
+                file_path = Path(root) / file
+                if file_path.suffix.lower() in [ext.lower() for ext in video_extensions]:
+                    video_files.append(str(file_path))
+            
+            if len(video_files) >= max_videos:
+                break  # Stop directory traversal once we have enough videos
+        
+        # Filter out directories and only keep files
+        video_files = [f for f in video_files if os.path.isfile(f)]
+        
+        if not video_files:
+            print("❌ No development videos found in input_dev/")
+            return []
+        
+        # Sort for consistent ordering
+        video_files.sort()
+        
+        # Apply max_videos limit
+        if len(video_files) > max_videos:
+            video_files = video_files[:max_videos]
+            print(f"   ✅ Found {len(video_files)} videos (limited to {max_videos} as requested)")
+        else:
+            print(f"   ✅ Found {len(video_files)} development videos")
+        
+        return video_files
+
+def map_to_high_res_filename(low_res_name: str) -> str:
+    """Convert low-res filename (_dev) to original high-res filename"""
+    if low_res_name.endswith('_dev.mp4'):
+        return low_res_name.replace('_dev.mp4', '.mp4')
+    if low_res_name.endswith('_dev.mov'):
+        return low_res_name.replace('_dev.mov', '.mov')
+    if low_res_name.endswith('_dev.avi'):
+        return low_res_name.replace('_dev.avi', '.avi')
+    if low_res_name.endswith('_dev.mkv'):
+        return low_res_name.replace('_dev.mkv', '.mkv')
+    # Handle uppercase extensions
+    if low_res_name.endswith('_dev.MP4'):
+        return low_res_name.replace('_dev.MP4', '.MP4')
+    if low_res_name.endswith('_dev.MOV'):
+        return low_res_name.replace('_dev.MOV', '.MOV')
+    if low_res_name.endswith('_dev.AVI'):
+        return low_res_name.replace('_dev.AVI', '.AVI')
+    if low_res_name.endswith('_dev.MKV'):
+        return low_res_name.replace('_dev.MKV', '.MKV')
+    # Fallback: return original name if no _dev suffix found
+    return low_res_name
 
 def _get_video_durations(video_paths: List[str]) -> dict:
     """Get durations for all video files."""

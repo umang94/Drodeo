@@ -1,8 +1,16 @@
 import os
 
+# Resolution presets for output quality
+RESOLUTION_PRESETS = {
+    "standard": (1920, 1080),  # 1080p Full HD (current default)
+    "high": (2560, 1440),      # 1440p QHD
+    "ultra": (3840, 2160),     # 4K UHD
+}
+
 # Video processing settings
 VIDEO_CONFIG = {
-    "output_resolution": (1920, 1080),
+    "output_resolution_preset": "standard",  # Default to standard resolution
+    "output_resolution": (1920, 1080),       # Backward compatibility
     "frame_sample_rate": 30,  # analyze every 30th frame
     "min_clip_duration": 2.0,  # minimum clip length in seconds
     "max_clip_duration": 15.0,  # maximum clip length in seconds
@@ -32,6 +40,10 @@ def ensure_directories():
     """Create necessary directories if they don't exist."""
     for path in PATHS.values():
         os.makedirs(path, exist_ok=True)
+
+def get_resolution_from_preset(preset_name: str) -> tuple:
+    """Get resolution tuple from preset name."""
+    return RESOLUTION_PRESETS.get(preset_name, RESOLUTION_PRESETS["standard"])
 
 # Audio analysis settings
 AUDIO_CONFIG = {

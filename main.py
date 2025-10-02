@@ -34,6 +34,8 @@ def main():
                        help='Custom directory containing video files (default: input)')
     parser.add_argument('--max-videos', type=int, default=30,
                        help='Maximum number of videos to process (default: 30)')
+    parser.add_argument('--high-res', action='store_true',
+                       help='Enable high-resolution output (4K UHD) using original source files')
     
     args = parser.parse_args()
     
@@ -77,9 +79,11 @@ def main():
     
     # Step 4: Run Two-Step Pipeline
     print("\n🚀 Step 4: Starting Two-Step Gemini Pipeline...")
+    print(f"📺 High-resolution mode: {'✅ Enabled' if args.high_res else '❌ Disabled'}")
     success = run_two_step_pipeline(
         input_dir=str(input_dir_path),
-        max_videos=args.max_videos
+        max_videos=args.max_videos,
+        high_res=args.high_res
     )
     
     if success:
